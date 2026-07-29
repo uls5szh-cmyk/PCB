@@ -22,7 +22,7 @@ st.set_page_config(page_title="PCB Lesson Learn 模板生成器", layout="wide",
 
 st.markdown("""
 # 🌅 PCB Lesson Learn 模板生成器 & 邮件草稿一键生成
-本程序已完美匹配 Excel (sheet: **PUQ3 LL Overall list**，表头自第二行开始)。
+本程序支持上传 **.xlsx** 及 **.xlsm（带宏）** 格式文件。
 您只需在下方表格中勾选所需的记录，即可一键自动填充并生成 Word 模板及配套 Outlook 邮件草稿。
 """)
 st.write("---")
@@ -52,7 +52,8 @@ if use_local_paths:
     else:
         st.sidebar.warning(f"⚠️ 未在指定路径找到 Word 模板，请尝试手动上传。")
 else:
-    uploaded_excel = st.sidebar.file_uploader("手动上传 PCB Master List (Excel):", type=["xlsx"])
+    # 扩展支持上传 xlsm 格式文件
+    uploaded_excel = st.sidebar.file_uploader("手动上传 PCB Master List (Excel):", type=["xlsx", "xlsm"])
     uploaded_template = st.sidebar.file_uploader("手动上传 LL Template (Word):", type=["docx"])
     if uploaded_excel:
         excel_file = uploaded_excel
@@ -61,7 +62,8 @@ else:
 
 # 如果没有找到默认文件，在主界面显示上传入口
 if excel_file is None:
-    uploaded_excel = st.file_uploader("📁 请上传 PCB Lesson Learn Master List (Excel)", type=["xlsx"], key="excel_main")
+    # 扩展支持上传 xlsm 格式文件
+    uploaded_excel = st.file_uploader("📁 请上传 PCB Lesson Learn Master List (Excel/xlsm)", type=["xlsx", "xlsm"], key="excel_main")
     if uploaded_excel:
         excel_file = uploaded_excel
 
@@ -108,7 +110,7 @@ def fill_word_template(template_source, row_data):
     doc = docx.Document(template_source)
     from docx.text.paragraph import Paragraph
     
-    # 1. 自动获取当前日期并格式化
+    # 1. 自动获取当前日期并格式化（例如 "October 24 2024"）
     current_date_str = datetime.date.today().strftime('%B %d %Y')
     
     problem_text = row_data.get('LL Brief Description', '')
@@ -116,10 +118,8 @@ def fill_word_template(template_source, row_data):
     
     ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
     
-    # 2. 全域 w:p 节点深度穿透扫描列表
+    # 2. 全域 w:p 节点深度穿透扫描列表（打破表格与正文的隔离）
     all_p_elements = []
-    
-    # 正文 body 中的所有段落节点（包含各种无边框表格、嵌套表、文本框等）
     all_p_elements.extend(doc._element.findall('.//w:p', ns))
     
     # 页眉与页脚中的所有段落节点
@@ -134,10 +134,10 @@ def fill_word_template(template_source, row_data):
                 continue
             all_p_elements.extend(hf._element.findall('.//w:p', ns))
             
-    # 去除重复节点指针
+    # 去除重复节点
     all_p_elements = list(set(all_p_elements))
     
-    # 3. 终极深度 XML 文本节点替换
+    # 3. 终极深度 XML 文本节点替换与追加
     for p_elem in all_p_elements:
         t_elems = p_elem.findall('.//w:t', ns)
         p_text = "".join([t.text for t in t_elems if t.text])
@@ -152,13 +152,12 @@ def fill_word_template(template_source, row_data):
                     if 'May 24, 2022' in t.text:
                         t.text = t.text.replace('May 24, 2022', current_date_str)
                         
-        # B. 终极覆盖：追加 'Lesson Learn –' 标题内容（用 XML 覆盖法，彻底解决样式碎块和隐藏追踪问题）
+        # B. 终极覆盖：追加 'Lesson Learn –' 标题内容（XML直接覆盖，完美规避格式碎块）
         if 'lesson' in p_text_normalized and 'learn' in p_text_normalized and len(p_text_normalized) < 50:
             if problem_text_str and problem_text_str not in p_text:
                 p_text_clean = p_text.strip().rstrip("–-—: ").strip()
                 new_val = f"{p_text_clean} – {problem_text_str}"
                 
-                # 直接操作最底层的 w:t，不使用 Paragraph.add_run()，100% 强制生效！
                 if t_elems:
                     t_elems[0].text = new_val
                     # 将该段落内其他碎裂的子文字运行块清空，防止文字重复
@@ -248,15 +247,15 @@ def fill_word_template(template_source, row_data):
                                 
     return doc
 
-# 核心逻辑：自动生成符合 Outlook 规范的 EML 邮件文件（带 HTML 渲染和红色加粗标记）
+# 核心逻辑：自动生成符合 Outlook 规范的 EML 邮件文件（带 HTML 红色加粗标记）
 def generate_eml_file(row_data):
     serial_no = str(row_data.get('LL Serials No', 'LL-xxxx-xx')).strip()
     failure_mode = str(row_data.get('Failure Mode', '*****')).strip()
     
-    # 拼接主题：M/PQR-AP LL | LL-****-** | Title *****
+    # 拼接主题：M/PQR-AP LL | LL-xxxx-xx | Title *****
     subject = f"M/PQR-AP LL | {serial_no} | Title {failure_mode}"
     
-    # 拼接富文本 HTML 正文排版
+    # 拼接富文本 HTML 正文排版 (还原截图，包含红色加粗)
     html_body = f"""
     <html>
     <head>
@@ -318,6 +317,14 @@ if excel_file is not None and template_file is not None:
         required_cols = ['Project/Part name', 'LL Brief Description', 'Root Cause', 'LL point']
         missing_cols = [c for c in required_cols if c not in df.columns]
         
+        # 智能检索并兼容 "LL Serials No" 和带点的 "LL Serials No."
+        serial_no_col = 'LL Serials No'
+        for col in df.columns:
+            col_clean = str(col).strip().replace('.', '').lower()
+            if 'll serials no' in col_clean or 'serials no' in col_clean or 'serial no' in col_clean:
+                serial_no_col = col
+                break
+                
         # 匹配 Supplier Scope
         supplier_scope_col = 'LL Supplier Scope'
         if 'LL Supplier Scope' not in df.columns:
@@ -329,7 +336,7 @@ if excel_file is not None and template_file is not None:
                 st.warning("⚠️ 未在 Excel 中检测到 'LL Supplier Scope'，生成时 Task 部分将保持空白。")
         
         if missing_cols:
-            st.error(f"❌ Excel 中缺失生成所需的关键列: {', '.join(missing_cols)}")
+            st.error(f"❌ Excel 中缺少生成所需的关键列: {', '.join(missing_cols)}")
         else:
             st.markdown("### 👈 第一步：在下方表格中搜索并勾选需要生成的 Record")
             search_term = st.text_input("🔍 快速搜索 (支持输入序列号、供应商、项目名称、失效模式进行实时筛选)：")
@@ -340,8 +347,9 @@ if excel_file is not None and template_file is not None:
             
             filtered_df.insert(0, '选择 (Select)', False)
             
-            display_cols = ['选择 (Select)', 'LL Serials No', 'Failure Mode', 'Supplier Name', 'Project/Part name', 'LL Brief Description']
-            available_display_cols = [c for c in display_cols if c in filtered_df.columns]
+            # 使用动态匹配的序列号列
+            display_cols_list = ['选择 (Select)', serial_no_col, 'Failure Mode', 'Supplier Name', 'Project/Part name', 'LL Brief Description']
+            available_display_cols = [c for c in display_cols_list if c in filtered_df.columns]
             
             edited_df = st.data_editor(
                 filtered_df[available_display_cols],
@@ -372,8 +380,9 @@ if excel_file is not None and template_file is not None:
                         # 场景 A：仅选中一条
                         if len(selected_rows) == 1:
                             row = selected_rows.iloc[0]
+                            # 【核心修复】：补全 row_data 中的所有属性，以便完美支持 Word 追加和 EML 生成
                             row_data = {
-                                'LL Serials No': row.get('LL Serials No', 'LL-xxxx-xx'),
+                                'LL Serials No': row.get(serial_no_col, 'LL-xxxx-xx'),
                                 'Failure Mode': row.get('Failure Mode', '*****'),
                                 'Project/Part name': row.get('Project/Part name', ''),
                                 'LL Brief Description': row.get('LL Brief Description', ''),
@@ -417,8 +426,9 @@ if excel_file is not None and template_file is not None:
                             zip_buffer = io.BytesIO()
                             with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
                                 for idx, (_, row) in enumerate(selected_rows.iterrows()):
+                                    # 【核心修复】：补全批量 row_data 中的所有属性
                                     row_data = {
-                                        'LL Serials No': row.get('LL Serials No', f"Record_{idx+1}"),
+                                        'LL Serials No': row.get(serial_no_col, f"Record_{idx+1}"),
                                         'Failure Mode': row.get('Failure Mode', '*****'),
                                         'Project/Part name': row.get('Project/Part name', ''),
                                         'LL Brief Description': row.get('LL Brief Description', ''),
@@ -457,3 +467,4 @@ if excel_file is not None and template_file is not None:
         st.info("排查提示：请确认 Excel 文件和 Word 模板未被本地 Excel/Word 软件独占打开。")
 else:
     st.info("ℹ️ 请在侧边栏确认默认文件路径，或者直接在侧边栏中手动上传 Excel 数据源 and Word 模板。")
+
