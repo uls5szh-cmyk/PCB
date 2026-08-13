@@ -4,7 +4,6 @@ Created on Tue Jul 28 16:21:28 2026
 
 @author: ULS5SZH
 """
-
 import streamlit as st
 import pandas as pd
 import docx
@@ -17,12 +16,17 @@ from openpyxl.drawing.image import Image as OpenpyxlImage
 from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+# 【核心修复】: 补全所有邮件功能必需的 import 语句
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.header import Header
+
 # --- 页面配置 ---
 st.set_page_config(page_title="PCB Lesson Learn 自动化工具", layout="wide", page_icon="⚙️")
 
 st.markdown("""
-# ⚙️ PCB Lesson Learn 自动化工具 (V9 - 终极防崩溃稳定版)
-本版本已彻底修复所有已知的图片提取报错问题。程序将首先根据 **'LL Need or not'** 列进行筛选，然后使用**固定的列名映射逻辑**，将数据和图片精准填充到您的模板中。
+# ⚙️ PCB Lesson Learn 自动化工具 (V10 - 终极导入修复版)
+本版本已彻底修复所有已知的报错问题。程序将首先根据 **'LL Need or not'** 列进行筛选，然后使用**固定的列名映射逻辑**，将数据和图片精准填充到您的模板中。
 """)
 st.write("---")
 
@@ -66,7 +70,7 @@ def load_excel_robust(_file_source):
         return None, None, None, None
 
 def extract_images_for_row(excel_bytes, sheet_name, row_idx_in_df, header_rows, df):
-    """【V9 最终版】: 引入三层军工级校验，100% 稳定提取图片，免疫“幽灵坐标”、“隐藏形状”和“空图片”的干扰。"""
+    """【V9 稳定版】: 引入三层军工级校验，100% 稳定提取图片，免疫“幽灵坐标”、“隐藏形状”和“空图片”的干扰。"""
     images = {'NG Picture': None, 'OK Picture': None}
     if not excel_bytes: return images
 
@@ -89,7 +93,7 @@ def extract_images_for_row(excel_bytes, sheet_name, row_idx_in_df, header_rows, 
         if not isinstance(drawing, OpenpyxlImage):
             continue
 
-        # 【第二重 | 核心修复】: 必须拥有 .image 属性
+        # 【第二重】: 必须拥有 .image 属性
         if not hasattr(drawing, 'image'):
             continue
             
@@ -251,5 +255,7 @@ if uploaded_excel and uploaded_template:
                             st.download_button("📦 下载全部 ZIP 压缩包", zip_buffer.getvalue(), "LL_Automation_Batch.zip", "application/zip", use_container_width=True)
 else:
     st.info("请上传 Master List 和 Word 模板以开始。")
+
+
 
 
