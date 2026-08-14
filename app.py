@@ -199,7 +199,7 @@ if excel_file_source and template_file_source:
             # Create a temporary df for display in st.data_editor
             display_df = filtered_df.copy()
             display_df['选择'] = False
-            display_cols = ['选择', 'LL Serials No', 'Failure Mode', 'Supplier Name', 'Project/Part name']
+            display_cols = ['选择', 'LL Serials No.', 'Failure Mode', 'Supplier Name', 'Project/Part name']
             
             edited_df = st.data_editor(
                 display_df[display_cols],
