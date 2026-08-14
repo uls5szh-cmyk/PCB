@@ -70,7 +70,7 @@ if template_file is None:
     if uploaded_template:
         template_file = uploaded_template
 
-# 提取Excel中的所有图片数据及物理列索引
+# 提取Excel中的所有图片数据及物理列索引 (含极限安全防御)
 @st.cache_data
 def load_excel_images(file_source, sheet_name):
     img_dict = {}
@@ -80,27 +80,44 @@ def load_excel_images(file_source, sheet_name):
         wb = openpyxl.load_workbook(file_source, data_only=True)
         ws = wb[sheet_name]
         
-        # 自动探测 OK Picture 和 NG Picture 的原生物理列号
+        # 自动探测 OK Picture 和 NG Picture 的原生物理列号 (1-based)
         for row in ws.iter_rows(min_row=1, max_row=15):
             for cell in row:
                 if cell.value and isinstance(cell.value, str):
                     if 'OK Picture' in cell.value.strip():
-                        ok_col_idx = cell.column - 1
+                        ok_col_idx = cell.column
                     if 'NG Picture' in cell.value.strip():
-                        ng_col_idx = cell.column - 1
+                        ng_col_idx = cell.column
                         
         if hasattr(ws, '_images'):
             for img in ws._images:
                 try:
-                    row = img.anchor._from.row
-                    col = img.anchor._from.col
-                    try:
-                        img_bytes = img._data()
-                    except TypeError:
-                        img_bytes = img._data
-                    img_dict[(row, col)] = img_bytes
+                    # 安全防御 1: 跳过没有 anchor 的残影
+                    if not hasattr(img, 'anchor'):
+                        continue
+                    
+                    row_idx, col_idx = -1, -1
+                    
+                    # 安全防御 2: 动态判断 anchor 的数据结构
+                    if hasattr(img.anchor, '_from'):
+                        row_idx = img.anchor._from.row + 1  # _from 为 0-based，加 1 转成 1-based
+                        col_idx = img.anchor._from.col + 1
+                    elif isinstance(img.anchor, str):
+                        # 如果 anchor 被存成类似 'A1' 的纯字符串
+                        from openpyxl.utils.cell import coordinate_to_tuple
+                        row_idx, col_idx = coordinate_to_tuple(img.anchor)
+                    else:
+                        continue
+                        
+                    if row_idx != -1 and col_idx != -1:
+                        try:
+                            img_bytes = img._data()
+                        except TypeError:
+                            img_bytes = img._data
+                        img_dict[(row_idx, col_idx)] = img_bytes
                 except Exception:
-                    pass
+                    continue # 遇到无法解析的图片直接忽略，不影响主流程
+                    
     except Exception as e:
         print(f"提取图片警告: {e}")
     return img_dict, ok_col_idx, ng_col_idx
@@ -131,16 +148,16 @@ def fill_word_template(template_source, row_data, img_data=None):
     doc = docx.Document(template_source)
     
     # 获取今天日期，格式匹配模板要求 (例如: Aug 14 2026)
-    current_date_str = datetime.date.today().strftime('%b %d %Y')
+    current_date_str = datetime.date.today().strftime('%b %d, %Y')
     
     # 提取需要的字段数据
     failure_mode_val = str(row_data.get('Failure Mode', '')).strip()
     should_or_not = str(row_data.get('Should or not to do', ''))
     
-    # 精准解析 Should 和 Should not (应对多种换行和全半角冒号)
+    # 极限宽容正则解析 Should 和 Should not (兼容有无冒号、各种空格)
     should_text, should_not_text = "", ""
-    should_match = re.search(r'Should[:：]\s*(.*?)(?:Should not[:：]|$)', should_or_not, re.DOTALL | re.IGNORECASE)
-    should_not_match = re.search(r'Should not[:：]\s*(.*)', should_or_not, re.DOTALL | re.IGNORECASE)
+    should_match = re.search(r'Should\s*[:：]?\s*(.*?)(?:Should\s*not\s*[:：]?|$)', should_or_not, re.DOTALL | re.IGNORECASE)
+    should_not_match = re.search(r'Should\s*not\s*[:：]?\s*(.*)', should_or_not, re.DOTALL | re.IGNORECASE)
     
     if should_match:
         should_text = should_match.group(1).strip()
@@ -305,8 +322,9 @@ if excel_file is not None and template_file is not None:
                     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
                         for idx, (original_df_index, row) in enumerate(selected_rows.iterrows()):
                             
-                            # 获取真实绝对物理行号 (0-indexed)。pandas行号 + header所在行号 + 1
-                            excel_row_idx = original_df_index + header_idx + 1
+                            # 精确获取真实绝对物理行号 (1-based)。pandas行号 + header所在行号 + 2 
+                            # (加2是因为 header_idx 是0-based, 数据行还要往下1行)
+                            excel_row_idx = original_df_index + header_idx + 2
                             
                             row_img_data = {
                                 'OK': excel_images_raw.get((excel_row_idx, ok_col_idx)) if ok_col_idx != -1 else None,
@@ -349,6 +367,9 @@ if excel_file is not None and template_file is not None:
         st.info("排查提示：请确认 Excel 文件未被打开，且环境中已安装 `openpyxl` 库处理图片。")
 else:
     st.info("ℹ️ 请在侧边栏上传 Excel 与 Word 模板。")
+
+
+
 
 
  
