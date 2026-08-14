@@ -84,7 +84,6 @@ def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
         
         col_ng = -1
         col_ok = -1
-        # 寻找对应的列索引
         for col_idx in range(1, ws.max_column + 1):
             val = ws.cell(row=header_idx + 1, column=col_idx).value
             if val:
@@ -92,9 +91,7 @@ def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
                 if 'NG Picture' in val_str: col_ng = col_idx - 1
                 if 'OK Picture' in val_str: col_ok = col_idx - 1
                 
-        # 计算 Excel 中的实际行 (0-based)
         excel_target_row = header_idx + 1 + target_row_idx
-        
         ok_img = None
         ng_img = None
         
@@ -157,7 +154,6 @@ def fill_word_template(template_source, row_data):
     from docx.text.paragraph import Paragraph
     from docx.shared import Inches
     
-    # 获取当天日期，例如格式 "October 24 2024"
     current_date_str = datetime.date.today().strftime('%b %d %Y')
     failure_mode_str = str(row_data.get('Failure Mode', '')).strip()
     ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
@@ -178,7 +174,6 @@ def fill_word_template(template_source, row_data):
             
     all_p_elements = list(set(all_p_elements))
     
-    # 第一层替换：修复日期断层、追加标题
     for p_elem in all_p_elements:
         t_elems = p_elem.findall('.//w:t', ns)
         if not t_elems:
@@ -187,24 +182,20 @@ def fill_word_template(template_source, row_data):
         p_text = "".join([t.text for t in t_elems if t.text])
         p_text_lower = p_text.lower()
         
-        # 完整替换右侧及页脚的日期（合并XML碎片）
         if 'may 24 2022' in p_text_lower:
             new_text = p_text.replace('May 24 2022', current_date_str).replace('May 24, 2022', current_date_str)
             t_elems[0].text = new_text
             for t in t_elems[1:]:
                 t.text = ""
                 
-        # 覆盖标题逻辑
         if 'lesson learn' in p_text_lower and len(p_text_lower) < 60:
             if failure_mode_str and failure_mode_str not in p_text:
                 p_text_clean = p_text.strip().rstrip("–-—: ").strip()
                 new_val = f"{p_text_clean} – {failure_mode_str}"
-                
                 t_elems[0].text = new_val
                 for t in t_elems[1:]:
                     t.text = ""
 
-    # 智能解析拆分 Should or not to do
     should_or_not = str(row_data.get('Should or not to do', ''))
     should_text = ""
     should_not_text = ""
@@ -217,45 +208,16 @@ def fill_word_template(template_source, row_data):
 
     body_p_elements = doc._body._body.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p')
     
-    # 映射字典
     headings_config = [
-        {
-            # 还原为标准文本匹配逻辑
-            'keys': ['Task/Scope', 'Task'],
-            'value': row_data.get('LL Supplier Scope', '')
-        },
-        {
-            'keys': ['Failure Mode'],
-            'value': row_data.get('Failure Mode', '')
-        },
-        {
-            'keys': ['Project/Part name', 'Product / Process'],
-            'value': row_data.get('Project/Part name', '')
-        },
-        {
-            'keys': ['Process'],
-            'value': row_data.get('Related Material Field / Process', '')
-        },
-        {
-            'keys': ['Problem (Fundamental Problem)', 'Problem'],
-            'value': row_data.get('LL Brief Description', '')
-        },
-        {
-            'keys': ['Root Cause(s)', 'Root Cause'],
-            'value': row_data.get('Root Cause', '')
-        },
-        {
-            'keys': ['Corrective Actions', 'Corrective Action'],
-            'value': row_data.get('Corrective Action', '')
-        },
-        {
-            'keys': ['What should we do in the future?'],
-            'value': should_text
-        },
-        {
-            'keys': ['What should we not do in the future?'],
-            'value': should_not_text
-        }
+        {'keys': ['Task/Scope', 'Task'], 'value': row_data.get('LL Supplier Scope', '')},
+        {'keys': ['Failure Mode'], 'value': row_data.get('Failure Mode', '')},
+        {'keys': ['Project/Part name', 'Product / Process'], 'value': row_data.get('Project/Part name', '')},
+        {'keys': ['Process'], 'value': row_data.get('Related Material Field / Process', '')},
+        {'keys': ['Problem (Fundamental Problem)', 'Problem'], 'value': row_data.get('LL Brief Description', '')},
+        {'keys': ['Root Cause(s)', 'Root Cause'], 'value': row_data.get('Root Cause', '')},
+        {'keys': ['Corrective Actions', 'Corrective Action'], 'value': row_data.get('Corrective Action', '')},
+        {'keys': ['What should we do in the future?'], 'value': should_text},
+        {'keys': ['What should we not do in the future?'], 'value': should_not_text}
     ]
     
     p_indices = {}
@@ -307,24 +269,20 @@ def fill_word_template(template_source, row_data):
         except Exception:
             pass
             
-    # 【修复图片填充】执行排他性逻辑，替换占位符，限制自适应宽度防换页
+    # 【修复图片错位】彻底清除多余回车符，防止表格断层
     ok_img = row_data.get('OK Picture Bytes')
     ng_img = row_data.get('NG Picture Bytes')
     
     if ok_img or ng_img:
         pic_table = None
         for table in doc.tables:
-            text = ""
-            for row in table.rows:
-                for cell in row.cells:
-                    text += cell.text + " "
+            text = "".join(cell.text for row in table.rows for cell in row.cells)
             if "OK-Part" in text and "Not-OK-Part" in text:
                 pic_table = table
                 break
                 
         if pic_table:
-            ok_cell = None
-            ng_cell = None
+            ok_cell, ng_cell = None, None
             for row in pic_table.rows:
                 for cell in row.cells:
                     if "Not-OK-Part" in cell.text:
@@ -332,36 +290,51 @@ def fill_word_template(template_source, row_data):
                     elif "OK-Part" in cell.text:
                         ok_cell = cell
             
-            # OK 图片处理：清空 "OK Picture" 文字，原地插入
+            # 清理 OK-Part 并插入图片
             if ok_img and ok_cell:
                 inserted = False
-                for p in ok_cell.paragraphs:
-                    p_text_clean = p.text.lower().replace(" ", "")
-                    if "okpicture" in p_text_clean:
-                        p.text = ""  # 清空占位文字
+                for p in list(ok_cell.paragraphs):
+                    p_text_lower = p.text.lower().replace(" ", "")
+                    # 保留表头文字
+                    if "ok-part" in p_text_lower:
+                        continue
+                    # 第一次遇到多余段落时，清空内容并塞入图片
+                    if not inserted:
+                        p.text = "" 
+                        p.alignment = 1 # 居中对齐
                         r = p.add_run()
-                        # 宽度限制为2.5英寸，防止图片过高把表格撑破到第二页
                         r.add_picture(io.BytesIO(ok_img), width=Inches(2.5))
                         inserted = True
-                        break
+                    else:
+                        # 核心修复：物理删除多余的空段落（回车符），完美解决错位断层
+                        p._element.getparent().remove(p._element)
+                        
                 if not inserted:
                     p = ok_cell.add_paragraph()
+                    p.alignment = 1
                     r = p.add_run()
                     r.add_picture(io.BytesIO(ok_img), width=Inches(2.5))
                     
-            # NG 图片处理：清空 "NGPicture" 或 "NG Picture" 文字，原地插入
+            # 清理 Not-OK-Part 并插入图片
             if ng_img and ng_cell:
                 inserted = False
-                for p in ng_cell.paragraphs:
-                    p_text_clean = p.text.lower().replace(" ", "")
-                    if "ngpicture" in p_text_clean:
-                        p.text = ""  # 清空占位文字
+                for p in list(ng_cell.paragraphs):
+                    p_text_lower = p.text.lower().replace(" ", "")
+                    if "not-ok-part" in p_text_lower:
+                        continue
+                    if not inserted:
+                        p.text = ""
+                        p.alignment = 1
                         r = p.add_run()
                         r.add_picture(io.BytesIO(ng_img), width=Inches(2.5))
                         inserted = True
-                        break
+                    else:
+                        # 物理删除多余的空段落
+                        p._element.getparent().remove(p._element)
+                        
                 if not inserted:
                     p = ng_cell.add_paragraph()
+                    p.alignment = 1
                     r = p.add_run()
                     r.add_picture(io.BytesIO(ng_img), width=Inches(2.5))
                                 
@@ -428,6 +401,20 @@ if excel_file is not None and template_file is not None:
     try:
         df, sheet_name, header_idx = load_excel_robust(excel_file)
         st.success(f"🎉 成功加载工作表: **{sheet_name}** (表头定位自第 {header_idx + 1} 行)")
+        
+        # 【新增功能】判断 LL Need or not 列并过滤
+        ll_need_col = 'LL Need or not'
+        if ll_need_col not in df.columns:
+            for col in df.columns:
+                if 'need or not' in str(col).lower():
+                    ll_need_col = col
+                    break
+                    
+        if ll_need_col in df.columns:
+            original_len = len(df)
+            df = df[df[ll_need_col].astype(str).str.strip().str.upper() == 'Y']
+            filtered_len = len(df)
+            st.info(f"💡 已自动过滤数据：仅保留 '{ll_need_col}' 状态为 'Y' 的有效记录 (共排除了 {original_len - filtered_len} 条非 Y 记录)。")
         
         serial_no_col = 'LL Serials No'
         for col in df.columns:
