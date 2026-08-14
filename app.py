@@ -208,6 +208,7 @@ def fill_word_template(template_source, row_data):
 
     body_p_elements = doc._body._body.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p')
     
+    # 增加额外的四项匹配
     headings_config = [
         {'keys': ['Task/Scope', 'Task'], 'value': row_data.get('LL Supplier Scope', '')},
         {'keys': ['Failure Mode'], 'value': row_data.get('Failure Mode', '')},
@@ -217,7 +218,11 @@ def fill_word_template(template_source, row_data):
         {'keys': ['Root Cause(s)', 'Root Cause'], 'value': row_data.get('Root Cause', '')},
         {'keys': ['Corrective Actions', 'Corrective Action'], 'value': row_data.get('Corrective Action', '')},
         {'keys': ['What should we do in the future?'], 'value': should_text},
-        {'keys': ['What should we not do in the future?'], 'value': should_not_text}
+        {'keys': ['What should we not do in the future?'], 'value': should_not_text},
+        {'keys': ['What else could be additionally affected?'], 'value': row_data.get('What else could be additionally affected?', '')},
+        {'keys': ['Where can the problem additionally occur?'], 'value': row_data.get('Where can the problem additionally occur?', '')},
+        {'keys': ['When can the problem additionally appear?'], 'value': row_data.get('When can the problem additionally appear?', '')},
+        {'keys': ['Who else can be affected?'], 'value': row_data.get('Who else can be affected?', '')}
     ]
     
     p_indices = {}
@@ -269,7 +274,7 @@ def fill_word_template(template_source, row_data):
         except Exception:
             pass
             
-    # 【修复图片错位】彻底清除多余回车符，防止表格断层
+    # 【图片错位清理逻辑】
     ok_img = row_data.get('OK Picture Bytes')
     ng_img = row_data.get('NG Picture Bytes')
     
@@ -290,23 +295,19 @@ def fill_word_template(template_source, row_data):
                     elif "OK-Part" in cell.text:
                         ok_cell = cell
             
-            # 清理 OK-Part 并插入图片
             if ok_img and ok_cell:
                 inserted = False
                 for p in list(ok_cell.paragraphs):
                     p_text_lower = p.text.lower().replace(" ", "")
-                    # 保留表头文字
                     if "ok-part" in p_text_lower:
                         continue
-                    # 第一次遇到多余段落时，清空内容并塞入图片
                     if not inserted:
                         p.text = "" 
-                        p.alignment = 1 # 居中对齐
+                        p.alignment = 1
                         r = p.add_run()
                         r.add_picture(io.BytesIO(ok_img), width=Inches(2.5))
                         inserted = True
                     else:
-                        # 核心修复：物理删除多余的空段落（回车符），完美解决错位断层
                         p._element.getparent().remove(p._element)
                         
                 if not inserted:
@@ -315,7 +316,6 @@ def fill_word_template(template_source, row_data):
                     r = p.add_run()
                     r.add_picture(io.BytesIO(ok_img), width=Inches(2.5))
                     
-            # 清理 Not-OK-Part 并插入图片
             if ng_img and ng_cell:
                 inserted = False
                 for p in list(ng_cell.paragraphs):
@@ -329,7 +329,6 @@ def fill_word_template(template_source, row_data):
                         r.add_picture(io.BytesIO(ng_img), width=Inches(2.5))
                         inserted = True
                     else:
-                        # 物理删除多余的空段落
                         p._element.getparent().remove(p._element)
                         
                 if not inserted:
@@ -402,7 +401,7 @@ if excel_file is not None and template_file is not None:
         df, sheet_name, header_idx = load_excel_robust(excel_file)
         st.success(f"🎉 成功加载工作表: **{sheet_name}** (表头定位自第 {header_idx + 1} 行)")
         
-        # 【新增功能】判断 LL Need or not 列并过滤
+        # 判断 LL Need or not 列并过滤
         ll_need_col = 'LL Need or not'
         if ll_need_col not in df.columns:
             for col in df.columns:
@@ -474,6 +473,7 @@ if excel_file is not None and template_file is not None:
                         
                         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, target_idx)
                         
+                        # 把新增的四项加到字典里传递给填充函数
                         row_data = {
                             'LL Serials No': row.get(serial_no_col, 'LL-xxxx-xx'),
                             'Failure Mode': row.get('Failure Mode', '*****'),
@@ -484,6 +484,10 @@ if excel_file is not None and template_file is not None:
                             'Should or not to do': row.get('Should or not to do', ''),
                             'Related Material Field / Process': row.get('Related Material Field / Process', ''),
                             'LL Supplier Scope': row.get(supplier_scope_col, ''),
+                            'What else could be additionally affected?': row.get('What else could be additionally affected?', ''),
+                            'Where can the problem additionally occur?': row.get('Where can the problem additionally occur?', ''),
+                            'When can the problem additionally appear?': row.get('When can the problem additionally appear?', ''),
+                            'Who else can be affected?': row.get('Who else can be affected?', ''),
                             'OK Picture Bytes': ok_img,
                             'NG Picture Bytes': ng_img
                         }
@@ -532,6 +536,10 @@ if excel_file is not None and template_file is not None:
                                     'Should or not to do': row.get('Should or not to do', ''),
                                     'Related Material Field / Process': row.get('Related Material Field / Process', ''),
                                     'LL Supplier Scope': row.get(supplier_scope_col, ''),
+                                    'What else could be additionally affected?': row.get('What else could be additionally affected?', ''),
+                                    'Where can the problem additionally occur?': row.get('Where can the problem additionally occur?', ''),
+                                    'When can the problem additionally appear?': row.get('When can the problem additionally appear?', ''),
+                                    'Who else can be affected?': row.get('Who else can be affected?', ''),
                                     'OK Picture Bytes': ok_img,
                                     'NG Picture Bytes': ng_img
                                 }
