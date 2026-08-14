@@ -16,6 +16,8 @@ import re
 import xml.etree.ElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 from email.header import Header
 
 # 页面基本配置
@@ -71,7 +73,7 @@ if template_file is None:
     if uploaded_template:
         template_file = uploaded_template
 
-# 新增：从 Vendor code 表格抓取供应商邮箱 (处理合并单元格与杂乱文本)
+# 从 Vendor code 表格抓取供应商邮箱
 def load_supplier_emails(file_source):
     try:
         if not isinstance(file_source, str):
@@ -83,11 +85,9 @@ def load_supplier_emails(file_source):
             
         df_vendor = pd.read_excel(file_source, sheet_name='Vendor code')
         
-        # 兼容列名大小写及首尾空格
         df_vendor.columns = df_vendor.columns.astype(str).str.strip()
         
         if 'Supplier' in df_vendor.columns and 'Name' in df_vendor.columns:
-            # 解决 Excel 合并单元格导致下面行为 NaN 的问题
             df_vendor['Supplier'] = df_vendor['Supplier'].ffill()
             
             supplier_dict = {}
@@ -98,7 +98,6 @@ def load_supplier_emails(file_source):
                 if pd.isna(row['Supplier']) or supplier == 'nan' or supplier == 'None':
                     continue
                     
-                # 使用正则暴力提取字符串中的所有邮箱地址
                 emails = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', name_val)
                 if emails:
                     if supplier not in supplier_dict:
@@ -106,7 +105,6 @@ def load_supplier_emails(file_source):
                     for email in emails:
                         supplier_dict[supplier].add(email)
             
-            # 转为 list 方便后续操作
             for k in supplier_dict:
                 supplier_dict[k] = list(supplier_dict[k])
                 
@@ -115,7 +113,7 @@ def load_supplier_emails(file_source):
         print(f"读取 Vendor code 失败: {e}")
     return {}
 
-# 智能提取 NG 和 OK 图片的函数
+# 智能提取 NG 和 OK 图片
 def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
     import openpyxl
     try:
@@ -156,7 +154,7 @@ def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
     except Exception as e:
         return None, None
 
-# 加载 Excel 主表，智能识别 Sheet 和表头行
+# 加载 Excel 主表
 def load_excel_robust(file_source):
     if not isinstance(file_source, str):
         file_source.seek(0)
@@ -400,8 +398,8 @@ def fill_word_template(template_source, row_data):
                                 
     return doc
 
-# 核心逻辑：生成带有收件人且默认以“编辑模式”打开的 EML 邮件草稿
-def generate_eml_file(row_data, to_emails=""):
+# 【核心更新】：生成带附件（Word文档）和草稿状态的 EML 文件
+def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_Template.docx"):
     serial_no = str(row_data.get('LL Serials No', 'LL-xxxx-xx')).strip()
     failure_mode = str(row_data.get('Failure Mode', '*****')).strip()
     
@@ -446,16 +444,25 @@ def generate_eml_file(row_data, to_emails=""):
     </html>
     """
     
-    msg = MIMEMultipart('alternative')
+    # 采用 mixed 格式以兼容多部分（正文 + 附件）
+    msg = MIMEMultipart('mixed')
     msg['Subject'] = Header(subject, 'utf-8')
     msg['From'] = 'Sunny.LIU3@cn.bosch.com'
     msg['To'] = to_emails  
+    msg.add_header('X-Unsent', '1') # 编辑草稿模式
     
-    # 【核心神操作】：注入 X-Unsent 头。这会让下载后的 EML 在 Outlook 里双击立刻呈现带“发送”按钮的编辑草稿状态！
-    msg.add_header('X-Unsent', '1')
+    # 附加 HTML 正文
+    alt_part = MIMEMultipart('alternative')
+    alt_part.attach(MIMEText(html_body, 'html', 'utf-8'))
+    msg.attach(alt_part)
     
-    part = MIMEText(html_body, 'html', 'utf-8')
-    msg.attach(part)
+    # 自动将填充好的 Word 模板作为附件加入
+    if doc_bytes:
+        part_doc = MIMEBase('application', 'vnd.openxmlformats-officedocument.wordprocessingml.document')
+        part_doc.set_payload(doc_bytes)
+        encoders.encode_base64(part_doc)
+        part_doc.add_header('Content-Disposition', f'attachment; filename="{doc_filename}"')
+        msg.attach(part_doc)
     
     return msg.as_bytes()
 
@@ -529,7 +536,7 @@ if excel_file is not None and template_file is not None:
         st.write("---")
         st.markdown("### 👉 第二步：配置邮件收件人并一键生成")
         
-        # 新增的 UI：供应商下拉多选框
+        # UI：供应商下拉多选框
         selected_suppliers = []
         if supplier_dict:
             supplier_options = list(supplier_dict.keys())
@@ -537,12 +544,10 @@ if excel_file is not None and template_file is not None:
         else:
             st.warning("⚠️ 未在 Excel 中检测到 'Vendor code' 工作表，或者该工作表中没有可用的供应商/邮箱数据。")
             
-        # 整合所选供应商的全部邮箱（去重）
         to_emails_list = []
         for s in selected_suppliers:
             to_emails_list.extend(supplier_dict[s])
         
-        # 用分号连接，以完美适配 Outlook
         to_emails_str = "; ".join(list(set(to_emails_list)))
         
         if to_emails_str:
@@ -581,23 +586,26 @@ if excel_file is not None and template_file is not None:
                         doc = fill_word_template(template_file, row_data)
                         bio_doc = io.BytesIO()
                         doc.save(bio_doc)
-                        bio_doc.seek(0)
                         
-                        eml_data = generate_eml_file(row_data, to_emails_str)
+                        # 获取 Word 文件的二进制数据并将其传入生成邮件方法中作为附件
+                        doc_bytes = bio_doc.getvalue()
                         serial_str = str(row_data['LL Serials No'])
+                        doc_filename = f"LL_Template_{serial_str}.docx"
+                        
+                        eml_data = generate_eml_file(row_data, to_emails_str, doc_bytes, doc_filename)
                         
                         col1, col2 = st.columns(2)
                         with col1:
                             st.download_button(
-                                label=f"📥 下载 Word: LL_Template_{serial_str}.docx",
-                                data=bio_doc.read(),
-                                file_name=f"LL_Template_{serial_str}.docx",
+                                label=f"📥 下载 Word: {doc_filename}",
+                                data=doc_bytes,
+                                file_name=doc_filename,
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 use_container_width=True
                             )
                         with col2:
                             st.download_button(
-                                label=f"📧 下载 Outlook 邮件草稿: Email_Draft_{serial_str}.eml",
+                                label=f"📧 下载 Outlook 邮件草稿 (内含附件): Email_Draft_{serial_str}.eml",
                                 data=eml_data,
                                 file_name=f"Email_Draft_{serial_str}.eml",
                                 mime="message/rfc822",
@@ -633,23 +641,26 @@ if excel_file is not None and template_file is not None:
                                 doc = fill_word_template(template_file, row_data)
                                 doc_io = io.BytesIO()
                                 doc.save(doc_io)
-                                doc_io.seek(0)
                                 
+                                doc_bytes = doc_io.getvalue()
                                 serial_str = str(row_data['LL Serials No'])
-                                zip_file.writestr(f"LL_Template_{serial_str}.docx", doc_io.getvalue())
+                                doc_filename = f"LL_Template_{serial_str}.docx"
                                 
-                                eml_data = generate_eml_file(row_data, to_emails_str)
+                                zip_file.writestr(doc_filename, doc_bytes)
+                                
+                                # 打包附件，生成 EML 草稿，放入 ZIP 包中
+                                eml_data = generate_eml_file(row_data, to_emails_str, doc_bytes, doc_filename)
                                 zip_file.writestr(f"Email_Draft_{serial_str}.eml", eml_data)
                                 
                         zip_buffer.seek(0)
                         st.download_button(
-                            label="📥 立即下载打包好的 ZIP 压缩包 (包含所有已勾选的 Word 与邮件草稿)",
+                            label="📥 立即下载打包好的 ZIP 压缩包 (包含所有已勾选的 Word 与内含附件的邮件草稿)",
                             data=zip_buffer.read(),
                             file_name="LL_Templates_and_Emails_Batch.zip",
                             mime="application/zip",
                             use_container_width=True
                         )
-                        st.success("✨ 批量生成成功！Word 模板与配套邮件草稿已全部打包成功。")
+                        st.success("✨ 批量生成成功！Word 模板与配套邮件草稿（已带附件）已全部打包成功。")
         else:
             st.warning("👉 请在上方表格的【选择】列中勾选您想要生成的记录。")
             
