@@ -12,6 +12,7 @@ import datetime
 import io
 import os
 import zipfile
+import re
 import xml.etree.ElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -70,7 +71,51 @@ if template_file is None:
     if uploaded_template:
         template_file = uploaded_template
 
-# 新增：从 Excel 中智能提取 NG 和 OK 图片的函数
+# 新增：从 Vendor code 表格抓取供应商邮箱 (处理合并单元格与杂乱文本)
+def load_supplier_emails(file_source):
+    try:
+        if not isinstance(file_source, str):
+            file_source.seek(0)
+        
+        xl = pd.ExcelFile(file_source)
+        if 'Vendor code' not in xl.sheet_names:
+            return {}
+            
+        df_vendor = pd.read_excel(file_source, sheet_name='Vendor code')
+        
+        # 兼容列名大小写及首尾空格
+        df_vendor.columns = df_vendor.columns.astype(str).str.strip()
+        
+        if 'Supplier' in df_vendor.columns and 'Name' in df_vendor.columns:
+            # 解决 Excel 合并单元格导致下面行为 NaN 的问题
+            df_vendor['Supplier'] = df_vendor['Supplier'].ffill()
+            
+            supplier_dict = {}
+            for _, row in df_vendor.iterrows():
+                supplier = str(row['Supplier']).strip()
+                name_val = str(row['Name'])
+                
+                if pd.isna(row['Supplier']) or supplier == 'nan' or supplier == 'None':
+                    continue
+                    
+                # 使用正则暴力提取字符串中的所有邮箱地址
+                emails = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', name_val)
+                if emails:
+                    if supplier not in supplier_dict:
+                        supplier_dict[supplier] = set()
+                    for email in emails:
+                        supplier_dict[supplier].add(email)
+            
+            # 转为 list 方便后续操作
+            for k in supplier_dict:
+                supplier_dict[k] = list(supplier_dict[k])
+                
+            return supplier_dict
+    except Exception as e:
+        print(f"读取 Vendor code 失败: {e}")
+    return {}
+
+# 智能提取 NG 和 OK 图片的函数
 def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
     import openpyxl
     try:
@@ -111,7 +156,7 @@ def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
     except Exception as e:
         return None, None
 
-# 核心逻辑：加载 Excel，智能识别 Sheet 和表头行
+# 加载 Excel 主表，智能识别 Sheet 和表头行
 def load_excel_robust(file_source):
     if not isinstance(file_source, str):
         file_source.seek(0)
@@ -148,7 +193,7 @@ def load_excel_robust(file_source):
     df.columns = df.columns.astype(str).str.strip()
     return df, target_sheet, header_idx
 
-# 核心逻辑：强力填充 Word 模板
+# 强力填充 Word 模板（消除一切格式错乱）
 def fill_word_template(template_source, row_data):
     doc = docx.Document(template_source)
     from docx.text.paragraph import Paragraph
@@ -274,12 +319,10 @@ def fill_word_template(template_source, row_data):
                 ans_p = Paragraph(new_p_element, p._parent)
                 
             if ans_p is not None:
-                # 【杀手锏】暴力粉碎底层 `<w:pPr>`，彻底清除模板残留的缩进、居中和行距杂质
                 if ans_p._element.pPr is not None:
                     ans_p._element.remove(ans_p._element.pPr)
                 
                 ans_p.text = ""
-                # 重新赋予最纯净的标准格式（左对齐，Arial，10.5号，不加粗）
                 run = ans_p.add_run(str(val))
                 run.font.name = 'Arial'
                 run.font.size = Pt(10.5)
@@ -288,7 +331,7 @@ def fill_word_template(template_source, row_data):
         except Exception:
             pass
             
-    # 【图片填充】同样加入底层格式重置，防止图片插入后错位偏移
+    # 【图片填充】
     ok_img = row_data.get('OK Picture Bytes')
     ng_img = row_data.get('NG Picture Bytes')
     
@@ -319,7 +362,7 @@ def fill_word_template(template_source, row_data):
                         if p._element.pPr is not None:
                             p._element.remove(p._element.pPr)
                         p.text = "" 
-                        p.alignment = 1 # 清洗完再赋予居中，保证居中得纯粹无偏移
+                        p.alignment = 1 
                         r = p.add_run()
                         r.add_picture(io.BytesIO(ok_img), width=Inches(2.5))
                         inserted = True
@@ -357,8 +400,8 @@ def fill_word_template(template_source, row_data):
                                 
     return doc
 
-# 核心逻辑：自动生成符合 Outlook 规范的 EML 邮件文件
-def generate_eml_file(row_data):
+# 核心逻辑：生成带有收件人且默认以“编辑模式”打开的 EML 邮件草稿
+def generate_eml_file(row_data, to_emails=""):
     serial_no = str(row_data.get('LL Serials No', 'LL-xxxx-xx')).strip()
     failure_mode = str(row_data.get('Failure Mode', '*****')).strip()
     
@@ -406,7 +449,10 @@ def generate_eml_file(row_data):
     msg = MIMEMultipart('alternative')
     msg['Subject'] = Header(subject, 'utf-8')
     msg['From'] = 'Sunny.LIU3@cn.bosch.com'
-    msg['To'] = ''  
+    msg['To'] = to_emails  
+    
+    # 【核心神操作】：注入 X-Unsent 头。这会让下载后的 EML 在 Outlook 里双击立刻呈现带“发送”按钮的编辑草稿状态！
+    msg.add_header('X-Unsent', '1')
     
     part = MIMEText(html_body, 'html', 'utf-8')
     msg.attach(part)
@@ -416,9 +462,14 @@ def generate_eml_file(row_data):
 # 5. 页面渲染与交互
 if excel_file is not None and template_file is not None:
     try:
+        # 加载基础信息
         df, sheet_name, header_idx = load_excel_robust(excel_file)
+        # 加载供应商邮箱字典
+        supplier_dict = load_supplier_emails(excel_file)
+        
         st.success(f"🎉 成功加载工作表: **{sheet_name}** (表头定位自第 {header_idx + 1} 行)")
         
+        # 判断 LL Need or not 列并过滤
         ll_need_col = 'LL Need or not'
         if ll_need_col not in df.columns:
             for col in df.columns:
@@ -476,7 +527,26 @@ if excel_file is not None and template_file is not None:
         selected_rows = filtered_df.loc[selected_indices]
         
         st.write("---")
-        st.markdown("### 👉 第二步：一键生成与下载")
+        st.markdown("### 👉 第二步：配置邮件收件人并一键生成")
+        
+        # 新增的 UI：供应商下拉多选框
+        selected_suppliers = []
+        if supplier_dict:
+            supplier_options = list(supplier_dict.keys())
+            selected_suppliers = st.multiselect("👥 请选择邮件需要发送给哪些供应商（将自动从 Vendor code Sheet 抓取邮箱）：", options=supplier_options)
+        else:
+            st.warning("⚠️ 未在 Excel 中检测到 'Vendor code' 工作表，或者该工作表中没有可用的供应商/邮箱数据。")
+            
+        # 整合所选供应商的全部邮箱（去重）
+        to_emails_list = []
+        for s in selected_suppliers:
+            to_emails_list.extend(supplier_dict[s])
+        
+        # 用分号连接，以完美适配 Outlook
+        to_emails_str = "; ".join(list(set(to_emails_list)))
+        
+        if to_emails_str:
+            st.info(f"📧 以下邮箱将被自动填入生成的邮件草稿【收件人】栏:\n\n{to_emails_str}")
         
         if len(selected_rows) > 0:
             st.success(f"已勾选 **{len(selected_rows)}** 条记录。请点击下方按钮开始生成：")
@@ -513,7 +583,7 @@ if excel_file is not None and template_file is not None:
                         doc.save(bio_doc)
                         bio_doc.seek(0)
                         
-                        eml_data = generate_eml_file(row_data)
+                        eml_data = generate_eml_file(row_data, to_emails_str)
                         serial_str = str(row_data['LL Serials No'])
                         
                         col1, col2 = st.columns(2)
@@ -568,7 +638,7 @@ if excel_file is not None and template_file is not None:
                                 serial_str = str(row_data['LL Serials No'])
                                 zip_file.writestr(f"LL_Template_{serial_str}.docx", doc_io.getvalue())
                                 
-                                eml_data = generate_eml_file(row_data)
+                                eml_data = generate_eml_file(row_data, to_emails_str)
                                 zip_file.writestr(f"Email_Draft_{serial_str}.eml", eml_data)
                                 
                         zip_buffer.seek(0)
