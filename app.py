@@ -11,239 +11,241 @@ import datetime
 import io
 import os
 import zipfile
-import openpyxl
-from openpyxl.drawing.image import Image as OpenpyxlImage
-from docx.shared import Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+import xml.etree.ElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.header import Header
-import re
+from openpyxl import load_workbook
+from docx.shared import Inches
+from docx.text.paragraph import Paragraph
 
-# --- 页面配置 ---
-st.set_page_config(page_title="PCB Lesson Learn 自动化工具", layout="wide", page_icon="⚙️")
+# 页面基本配置
+st.set_page_config(page_title="PCB Lesson Learn 模板生成器", layout="wide", page_icon="🌅")
 
 st.markdown("""
-# ⚙️ PCB Lesson Learn 自动化工具 (V11 - 精准映射与智能拆分版)
-本版本已按您的最终要求重构。程序将首先根据 **'LL Need or not'** 列进行筛选，然后使用**固定的列名映射逻辑**，将数据（包括智能拆分的Learning）和图片精准填充到您的模板中。
+# 🌅 PCB Lesson Learn 模板生成器 & 邮件草稿一键生成
+本程序已完美匹配 Excel (sheet: **PUQ3 LL Overall list**，表头通常自第二行开始)。
+您只需在下方表格中勾选所需的记录，即可一键自动填充并生成 Word 模板及配套 Outlook 邮件草稿。
 """)
 st.write("---")
 
-# --- 文件上传 ---
-uploaded_excel = st.file_uploader("📁 **步骤 1: 上传 PCB Lesson Learn Master List (.xlsx / .xlsm)**", type=["xlsx", "xlsm"])
-uploaded_template = st.file_uploader("📝 **步骤 2: 上传您的 LL Word 模板 (.docx)**", type=["docx"])
+# 1. 默认路径配置
+DEFAULT_EXCEL_PATH = r"G:\\02_7_M-PQA-RBAC1\\08_PQA_AE\\09_PQA2\\11_PCB\\04_Lessons learn\\PCB Lesson Learn Master List.xlsx"
+DEFAULT_TEMPLATE_PATH = r"G:\\02_7_M-PQA-RBAC1\\08_PQA_AE\\09_PQA2\\11_PCB\\04_Lessons learn\\LL Template complete version.docx"
 
-# --- 核心函数 ---
+# 侧边栏配置面板
+st.sidebar.header("⚙️ 配置面板")
+use_local_paths = st.sidebar.checkbox("使用本地固定路径 (G 盘)", value=True)
 
-def find_column_by_keywords(df_columns, keywords, default=None):
-    for col in df_columns:
-        col_clean = str(col).strip().lower().replace('.', '')
-        if any(keyword.lower() in col_clean for keyword in keywords):
-            return col
-    return default
+excel_file = None
+template_file = None
 
-@st.cache_data
-def load_excel_robust(_file_source):
-    if _file_source is None: return None, None, None, None
-    file_bytes = _file_source.getvalue()
-    excel_io = io.BytesIO(file_bytes)
-    try:
-        xl = pd.ExcelFile(excel_io, engine='openpyxl')
-        sheet_names = xl.sheet_names
-        target_sheet = next((s for s in sheet_names if "PUQ3 LL Overall list" in s), sheet_names[0])
-        excel_io.seek(0)
-        df_temp = pd.read_excel(excel_io, sheet_name=target_sheet, nrows=10, header=None, engine='openpyxl')
-        header_idx = next((idx for idx, row in df_temp.iterrows() if any('serials' in str(v).lower() for v in row)), 1)
-        excel_io.seek(0)
-        df = pd.read_excel(excel_io, sheet_name=target_sheet, header=header_idx, engine='openpyxl')
-        df.columns = [str(c).strip() for c in df.columns]
-        return file_bytes, df, target_sheet, header_idx
-    except Exception as e:
-        st.error(f"加载 Excel 文件时出错: {e}")
-        return None, None, None, None
+if use_local_paths:
+    excel_path = st.sidebar.text_input("Excel 文件路径:", DEFAULT_EXCEL_PATH)
+    template_path = st.sidebar.text_input("Template 模板路径:", DEFAULT_TEMPLATE_PATH)
+    if os.path.exists(excel_path): excel_file = excel_path
+    else: st.sidebar.warning("⚠️ 未在指定路径找到 Excel 文件，请尝试手动上传。")
+    if os.path.exists(template_path): template_file = template_path
+    else: st.sidebar.warning("⚠️ 未在指定路径找到 Word 模板，请尝试手动上传。")
+else:
+    excel_file = st.sidebar.file_uploader("手动上传 PCB Master List (Excel):", type=["xlsx"])
+    template_file = st.sidebar.file_uploader("手动上传 LL Template (Word):", type=["docx"])
 
-def extract_images_for_row(excel_bytes, sheet_name, row_idx_in_df, header_rows, df):
-    images = {'NG Picture': None, 'OK Picture': None}
-    if not excel_bytes: return images
-    wb = openpyxl.load_workbook(io.BytesIO(excel_bytes))
-    ws = wb[sheet_name]
-    col_map = {col: i for i, col in enumerate(df.columns)}
-    ng_col_key = find_column_by_keywords(df.columns, ["NG Picture"])
-    ok_col_key = find_column_by_keywords(df.columns, ["OK Picture"])
-    ng_col_idx, ok_col_idx = col_map.get(ng_col_key), col_map.get(ok_col_key)
-    excel_target_row = row_idx_in_df + header_rows + 2
-    if ng_col_idx is None and ok_col_idx is None: return images
-    for drawing in ws._images:
-        if not isinstance(drawing, OpenpyxlImage) or not hasattr(drawing, 'image') or not (drawing.image and hasattr(drawing.image, 'blob') and drawing.image.blob):
-            continue
-        if drawing.anchor._from.row + 1 == excel_target_row:
-            img_col = drawing.anchor._from.col
-            if img_col == ng_col_idx: images['NG Picture'] = io.BytesIO(drawing.image.blob)
-            elif img_col == ok_col_idx: images['OK Picture'] = io.BytesIO(drawing.image.blob)
-    return images
+if not excel_file: excel_file = st.file_uploader("📁 请上传 PCB Lesson Learn Master List (Excel)", type=["xlsx"], key="excel_main")
+if not template_file: template_file = st.file_uploader("📝 请上传 LL Template (Word) 模板文件", type=["docx"], key="template_main")
 
-def fill_word_template(template_source, row_data, images, excel_columns):
+# 核心逻辑：加载 Excel
+def load_excel_robust(file_source):
+    xl = pd.ExcelFile(file_source)
+    sheet_name = next((s for s in xl.sheet_names if "PUQ3 LL Overall list" in s), xl.sheet_names[0])
+    df_temp = pd.read_excel(file_source, sheet_name=sheet_name, nrows=10, header=None)
+    header_idx = 1
+    for idx, row in df_temp.iterrows():
+        row_str = [str(val).strip().lower() for val in row.tolist()]
+        if any('serials' in val or 'project/part' in val for val in row_str):
+            header_idx = idx
+            break
+    df = pd.read_excel(file_source, sheet_name=sheet_name, header=header_idx)
+    df.columns = df.columns.astype(str).str.strip()
+    return df, sheet_name, header_idx
+
+# 核心逻辑：填充Word模板
+def fill_word_template(template_source, row_data, df_index, excel_file_path, header_idx):
     doc = docx.Document(template_source)
     current_date_str = datetime.date.today().strftime('%B %d, %Y')
 
-    # 【核心重构】: 定义固定的模板标题与Excel列名的映射关系
-    fixed_mapping = {
-        "Task/Scope": find_column_by_keywords(excel_columns, ["LL Supplier Scope"]),
-        "Failure Mode": find_column_by_keywords(excel_columns, ["Failure Mode"]),
-        "Project/Part name": find_column_by_keywords(excel_columns, ["Project/Part name"]),
-        "Process": find_column_by_keywords(excel_columns, ["Related Material Field / Process"]),
-        "Problem (Fundamental Problem)": find_column_by_keywords(excel_columns, ["LL Brief Description"]),
-        "Root Cause(s)": find_column_by_keywords(excel_columns, ["Root Cause"]),
-        "Corrective Actions": find_column_by_keywords(excel_columns, ["Corrective Action"]),
-    }
-
-    # 【核心重构】: Learning 智能拆分逻辑
-    should_do, should_not_do = "", ""
-    learning_col = find_column_by_keywords(excel_columns, ["Should or not to do"])
-    if learning_col and learning_col in row_data:
-        learning_text = str(row_data[learning_col])
-        # 使用正则表达式进行更健壮的拆分
-        should_match = re.search(r'Should:(.*?)(Should not:|$)', learning_text, re.IGNORECASE | re.DOTALL)
-        should_not_match = re.search(r'Should not:(.*)', learning_text, re.IGNORECASE | re.DOTALL)
-        if should_match: should_do = should_match.group(1).strip()
-        if should_not_match: should_not_do = should_not_match.group(1).strip()
-
-    learning_mapping = {
-        "What should we do in the future?": should_do,
-        "What should we not do in the future?": should_not_do,
-    }
-
-    all_paras = []
-    for p in doc.paragraphs: all_paras.append(p)
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells: all_paras.extend(cell.paragraphs)
+    # 替换页眉页脚和标题
     for section in doc.sections:
-        for hf in [section.header, section.footer, section.first_page_header, section.first_page_footer]:
-            if hf:
-                all_paras.extend(hf.paragraphs)
-                for table in hf.tables:
-                    for row in table.rows:
-                        for cell in row.cells: all_paras.extend(cell.paragraphs)
-    
-    # --- 开始填充 ---
-    for p in all_paras:
-        # 替换日期
-        if 'May 24 2022' in p.text: p.text = p.text.replace('May 24 2022', current_date_str)
-        p_text_clean = p.text.strip()
-        
-        # 填充主内容
-        for template_title, excel_col_name in fixed_mapping.items():
-            if template_title == p_text_clean and excel_col_name:
-                value = row_data.get(excel_col_name, '')
-                p.text = str(value if pd.notna(value) else '')
-                break
-        
-        # 填充拆分后的Learning内容
-        for template_title, value in learning_mapping.items():
-            if template_title in p_text_clean:
-                p.text = value
-                break
+        for part in (section.header, section.footer, section.first_page_header, section.first_page_footer, section.even_page_header, section.even_page_footer):
+            if part:
+                for p in part.paragraphs:
+                    p.text = p.text.replace('May 24 2022', current_date_str)
 
-    # 填充顶部标题
-    problem_desc_col = fixed_mapping.get("Problem (Fundamental Problem)")
-    if problem_desc_col:
-        problem_desc = str(row_data.get(problem_desc_col, ''))
-        for p in all_paras:
-            if p.text.strip().startswith("Lesson Learn"):
-                if problem_desc and problem_desc not in p.text:
-                    p.text = f"Lesson Learn – {problem_desc}"
-                    break
+    # 替换主标题
+    for p in doc.paragraphs:
+        if 'Lesson Learn –' in p.text:
+            p.text = f"Lesson Learn – {str(row_data.get('LL Brief Description', '')).strip()}"
+            break
+
+    # 查找并填充文本内容
+    def find_and_fill(target_text, content_to_fill):
+        content_to_fill = str(content_to_fill if pd.notna(content_to_fill) else "")
+        for p in doc.paragraphs:
+            if target_text.lower() in p.text.lower():
+                # 尝试在下一段落填充
+                next_elem = p._element.getnext()
+                if next_elem is not None and next_elem.tag.endswith('p'):
+                    next_p = Paragraph(next_elem, p_parent=p._parent)
+                    # 清空并填充
+                    for run in next_p.runs: run.clear()
+                    next_p.add_run(content_to_fill)
+                    return
+                # 否则，在标题后插入新段落
+                new_p = p.insert_paragraph_before(content_to_fill, style=p.style)
+                return
+
+    # 映射并填充
+    find_and_fill('Task/Scope', row_data.get('LL Supplier Scope', ''))
+    find_and_fill('Failure Mode', row_data.get('Failure Mode', ''))
+    find_and_fill('Project/Part name', row_data.get('Project/Part name', ''))
+    find_and_fill('Process', row_data.get('Related Material Field / Process', ''))
+    find_and_fill('Problem (Fundamental Problem)', row_data.get('LL Brief Description', ''))
+    find_and_fill('Root Cause(s)', row_data.get('Root Cause', ''))
+    find_and_fill('Corrective Actions', row_data.get('Corrective Action', ''))
+
+    # 拆分填充Should/Should not
+    should_text = str(row_data.get('Should or not to do', ''))
+    should_do = should_text.split('Should not:')[0].replace('Should:', '').strip()
+    should_not_do = should_text.split('Should not:')[1].strip() if 'Should not:' in should_text else ''
+    find_and_fill('What should we do in the future?', should_do)
+    find_and_fill('What should we not do in the future?', should_not_do)
     
-    # 【核心重构】: 精准图片入框
-    for table in doc.tables:
-        try:
-            # 通过表格第一行的关键词来精准定位图片框
-            if "OK-Part" in table.cell(0, 0).text and "Not-OK-Part" in table.cell(0, 1).text:
-                ok_cell, ng_cell = table.cell(0, 0), table.cell(0, 1)
-                ok_cell.text, ng_cell.text = '', '' # 清除 "OK-Part" 和 "Not-OK-Part" 占位符
-                
-                # 在清理后的单元格中插入图片
-                if images.get('OK Picture'):
-                    p_ok = ok_cell.paragraphs[0] if ok_cell.paragraphs else ok_cell.add_paragraph()
-                    p_ok.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    p_ok.add_run().add_picture(images['OK Picture'], width=Inches(2.5))
-                
-                if images.get('NG Picture'):
-                    p_ng = ng_cell.paragraphs[0] if ng_cell.paragraphs else ng_cell.add_paragraph()
-                    p_ng.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    p_ng.add_run().add_picture(images['NG Picture'], width=Inches(2.5))
-                break
-        except IndexError:
-            continue
+    # 提取并插入图片
+    try:
+        wb = load_workbook(excel_file_path)
+        sheet_name = next((s for s in wb.sheetnames if "PUQ3 LL Overall list" in s), wb.sheetnames[0])
+        ws = wb[sheet_name]
+        
+        col_map = {cell.value.strip(): cell.column for cell in ws[header_idx + 1]}
+        ok_pic_col = col_map.get('OK Picture')
+        ng_pic_col = col_map.get('NG Picture')
+        
+        # Excel行号 = dataframe的index + 表头所在行数 + 1 (因为pandas是0-indexed, openpyxl是1-indexed)
+        excel_row = df_index + header_idx + 1
+
+        pic_table = next((tbl for tbl in doc.tables if 'OK-Part' in tbl.cell(0,0).text), None)
+        if pic_table:
+            ok_cell, ng_cell = pic_table.cell(1, 0), pic_table.cell(1, 1) # Data is in the second row
+            ok_cell.paragraphs[0].clear()
+            ng_cell.paragraphs[0].clear()
+            
+            for img in ws._images:
+                row_anchor = img.anchor._from.row + 1
+                col_anchor = img.anchor._from.col + 1
+                if row_anchor == excel_row:
+                    img_data = io.BytesIO(img.ref)
+                    if col_anchor == ok_pic_col:
+                        ok_cell.paragraphs[0].add_run().add_picture(img_data, width=Inches(2.5))
+                    elif col_anchor == ng_pic_col:
+                        ng_cell.paragraphs[0].add_run().add_picture(img_data, width=Inches(2.5))
+    except Exception as e:
+        st.warning(f"⚠️ 处理图片时发生错误: {e}. 请确保Excel文件未被加密且格式正确。")
+        
     return doc
 
-def generate_eml_file(row_data, serial_no_col, failure_mode_col):
-    serial_no = str(row_data.get(serial_no_col, 'LL-xxxx-xx')).strip()
-    failure_mode = str(row_data.get(failure_mode_col, '*****')).strip()
+# 核心逻辑：生成EML文件
+def generate_eml_file(row_data):
+    serial_no = str(row_data.get('LL Serials No', 'LL-xxxx-xx')).strip()
+    failure_mode = str(row_data.get('Failure Mode', '******')).strip()
     subject = f"M/PQR-AP LL | {serial_no} | Title {failure_mode}"
-    html_body = f"""<html>... (omitted for brevity) ...</html>"""
+    html_body = f"""
+    <html><head><style>body{{font-family:'Arial',sans-serif;font-size:10.5pt;line-height:1.6;color:#333;}} .red-bold{{color:#FF0000;font-weight:bold;}} ul{{margin:5px 0 15px 20px;}} li{{margin-bottom:8px;}}</style></head>
+    <body>
+        <p>Dear Supplier:</p>
+        <p>Recently, we summarized a lesson learn about <strong>{failure_mode}</strong>. Please review the attached LL document and complete following tasks:</p>
+        <ul>
+            <li>Complete feedback form based on self-evaluation on your own processes and send to your responsible PQR and PUQ-PQA (ME) within <span class="red-bold">one week.</span></li>
+            <li>After your self-evaluation, please close defined actions within <span class="red-bold">three weeks.</span></li>
+            <li>Our PQR or PUQ-PQA colleague may conduct onsite verification according to the information in feedback form in <span class="red-bold">one month.</span></li>
+        </ul>
+        <p>If you have any question about this lesson learn, please contact with your responsible PQR and PUQ-PQA (ME).</p>
+        <p>Best regards,</p><p><strong>Purchasing Quality Region Asia Pacific Team</strong></p>
+    </body></html>
+    """
     msg = MIMEMultipart('alternative')
     msg['Subject'] = Header(subject, 'utf-8')
     msg['From'] = 'Sunny.LIU3@cn.bosch.com'
     msg.attach(MIMEText(html_body, 'html', 'utf-8'))
     return msg.as_bytes()
 
-# --- 主应用流程 (与上一版相同) ---
-if uploaded_excel and uploaded_template:
-    file_bytes, df, sheet_name, header_idx = load_excel_robust(uploaded_excel)
-    if df is not None:
-        st.success(f"🎉 Excel文件加载成功! (工作表: **{sheet_name}**, 表头在第 **{header_idx + 1}** 行)")
-        ll_need_col = find_column_by_keywords(df.columns, ["LL Need or not"])
-        if ll_need_col:
-            initial_count = len(df)
-            df_filtered = df[df[ll_need_col].astype(str).str.upper() == 'Y'].copy()
-            st.info(f"已根据 **'{ll_need_col}' = Y** 筛选。显示 **{len(df_filtered)}** / **{initial_count}** 条记录。")
-        else:
-            st.warning(f"⚠️ 未在Excel中找到 '{ll_need_col}' 列，将显示所有记录。")
-            df_filtered = df.copy()
+# 页面渲染与交互
+if excel_file and template_file:
+    try:
+        excel_path = excel_file if isinstance(excel_file, str) else excel_file.name
+        if not isinstance(excel_file, str):
+            with open(excel_path, "wb") as f: f.write(excel_file.getbuffer())
 
-        st.markdown("### 📝 步骤 3: 搜索并勾选记录")
-        search_term = st.text_input("🔍 可按任意关键词快速搜索:")
-        if search_term:
-            df_filtered = df_filtered[df_filtered.astype(str).apply(lambda row: row.str.contains(search_term, case=False).any(), axis=1)]
-        serial_no_col = find_column_by_keywords(df_filtered.columns, ["LL Serials No"])
-        failure_mode_col = find_column_by_keywords(df_filtered.columns, ["Failure Mode"])
-        if not serial_no_col or not failure_mode_col:
-            st.error("关键错误: 无法在Excel中找到 'LL Serials No' 或 'Failure Mode' 列。")
+        df, sheet_name, header_idx = load_excel_robust(excel_path)
+        st.success(f"🎉 成功加载工作表: **{sheet_name}** (表头定位自第 {header_idx + 1} 行)")
+        
+        required_cols = ['LL Serials No', 'Failure Mode', 'Project/Part name', 'LL Brief Description', 'Root Cause', 'Corrective Action', 'Should or not to do', 'Related Material Field / Process', 'LL Supplier Scope', 'OK Picture', 'NG Picture']
+        if missing_cols := [c for c in required_cols if c not in df.columns]:
+            st.error(f"❌ Excel 中缺失关键列: {', '.join(missing_cols)}")
         else:
-            selected_ids = st.multiselect("请选择要生成文档的记录 (多选将打包为ZIP):", options=df_filtered[serial_no_col].tolist(), format_func=lambda x: f"{x} - {df_filtered[df_filtered[serial_no_col] == x][failure_mode_col].iloc[0]}")
-            if selected_ids:
-                st.write("---")
-                if st.button("🚀 生成选中项的文档", type="primary", use_container_width=True):
-                    with st.spinner("正在处理... 提取图片可能需要一些时间..."):
-                        selected_rows = df_filtered[df_filtered[serial_no_col].isin(selected_ids)]
+            st.markdown("### 👈 第一步：在下方表格中搜索并勾选需要生成的 Record")
+            search_term = st.text_input("🔍 快速搜索:")
+            filtered_df = df[df.astype(str).apply(lambda row: row.str.contains(search_term, case=False).any(), axis=1)] if search_term else df
+            
+            edited_df = st.data_editor(
+                filtered_df[['LL Serials No', 'Failure Mode', 'Supplier Name', 'Project/Part name']].assign(**{'选择': False}),
+                column_config={"选择": st.column_config.CheckboxColumn(required=True)},
+                hide_index=True, use_container_width=True
+            )
+            
+            selected_rows = edited_df[edited_df['选择']]
+            if not selected_rows.empty:
+                st.markdown("### 👉 第二步：一键生成与下载")
+                if st.button("🚀 开始批量生成 Word 与邮件草稿", type="primary", use_container_width=True):
+                    with st.spinner("处理中..."):
+                        # Get original indices from filtered_df
+                        original_indices = selected_rows.index
+                        rows_to_process = filtered_df.loc[original_indices]
+
                         # Single file generation
-                        if len(selected_rows) == 1:
-                            row = selected_rows.iloc[0]
-                            images = extract_images_for_row(file_bytes, sheet_name, row.name, header_idx, df)
-                            doc = fill_word_template(uploaded_template, row, images, df.columns)
-                            doc_io = io.BytesIO(); doc.save(doc_io)
-                            eml_data = generate_eml_file(row, serial_no_col, failure_mode_col)
-                            st.success("✨ 生成成功!")
-                            c1, c2 = st.columns(2)
-                            c1.download_button(f"📥 下载 Word ({row[serial_no_col]})", doc_io.getvalue(), f"LL_{row[serial_no_col]}.docx", use_container_width=True)
-                            c2.download_button(f"📧 下载邮件 ({row[serial_no_col]})", eml_data, f"Email_{row[serial_no_col]}.eml", "message/rfc822", use_container_width=True)
-                        # Batch zip generation
+                        if len(rows_to_process) == 1:
+                            row = rows_to_process.iloc[0]
+                            doc = fill_word_template(template_file, row, rows_to_process.index[0], excel_path, header_idx)
+                            doc_io = io.BytesIO()
+                            doc.save(doc_io)
+                            
+                            col1, col2 = st.columns(2)
+                            serial = str(row.get('LL Serials No', 'file'))
+                            col1.download_button("📥 下载 Word", doc_io.getvalue(), f"LL_Template_{serial}.docx", use_container_width=True)
+                            col2.download_button("📧 下载邮件草稿", generate_eml_file(row), f"Email_Draft_{serial}.eml", use_container_width=True)
+                            st.success("✨ 生成成功！")
+                        
+                        # Zip generation for multiple files
                         else:
                             zip_buffer = io.BytesIO()
-                            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                                for _, row in selected_rows.iterrows():
-                                    images = extract_images_for_row(file_bytes, sheet_name, row.name, header_idx, df)
-                                    doc = fill_word_template(uploaded_template, row, images, df.columns)
-                                    doc_io = io.BytesIO(); doc.save(doc_io)
-                                    zf.writestr(f"LL_{row[serial_no_col]}.docx", doc_io.getvalue())
-                                    eml_data = generate_eml_file(row, serial_no_col, failure_mode_col)
-                                    zf.writestr(f"Email_{row[serial_no_col]}.eml", eml_data)
-                            st.success("✨ 批量生成完毕!")
-                            st.download_button("📦 下载全部 ZIP 压缩包", zip_buffer.getvalue(), "LL_Automation_Batch.zip", "application/zip", use_container_width=True)
+                            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zf:
+                                for idx, row in rows_to_process.iterrows():
+                                    doc = fill_word_template(template_file, row, idx, excel_path, header_idx)
+                                    doc_io = io.BytesIO()
+                                    doc.save(doc_io)
+                                    serial = str(row.get('LL Serials No', f"file_{idx}"))
+                                    zf.writestr(f"LL_Template_{serial}.docx", doc_io.getvalue())
+                                    zf.writestr(f"Email_Draft_{serial}.eml", generate_eml_file(row))
+                            st.download_button("📥 下载全部 (ZIP)", zip_buffer.getvalue(), "LL_Batch.zip", "application/zip", use_container_width=True)
+                            st.success("✨ 批量生成成功！")
+            else:
+                st.warning("👉 请在上方表格的【选择】列中勾选您想要生成的记录。")
+    except Exception as e:
+        st.error(f"❌ 处理文件时出错: {e}")
+        st.info("排查提示：请确认 Excel 和 Word 模板格式正确且未被加密。")
 else:
-    st.info("请上传 Master List 和 Word 模板以开始。")
+    st.info("ℹ️ 请在侧边栏配置或上传 Excel 数据源和 Word 模板。")
+
+
 
 
 
