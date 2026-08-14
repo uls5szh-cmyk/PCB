@@ -70,25 +70,40 @@ if template_file is None:
     if uploaded_template:
         template_file = uploaded_template
 
-# 提取Excel中的所有图片数据
+# 提取Excel中的所有图片数据及物理列索引
 @st.cache_data
 def load_excel_images(file_source, sheet_name):
     img_dict = {}
+    ok_col_idx = -1
+    ng_col_idx = -1
     try:
         wb = openpyxl.load_workbook(file_source, data_only=True)
         ws = wb[sheet_name]
+        
+        # 自动探测 OK Picture 和 NG Picture 的原生物理列号
+        for row in ws.iter_rows(min_row=1, max_row=15):
+            for cell in row:
+                if cell.value and isinstance(cell.value, str):
+                    if 'OK Picture' in cell.value.strip():
+                        ok_col_idx = cell.column - 1
+                    if 'NG Picture' in cell.value.strip():
+                        ng_col_idx = cell.column - 1
+                        
         if hasattr(ws, '_images'):
             for img in ws._images:
                 try:
-                    # 获取图片所在单元格坐标 (0索引)
                     row = img.anchor._from.row
                     col = img.anchor._from.col
-                    img_dict[(row, col)] = img._data()
+                    try:
+                        img_bytes = img._data()
+                    except TypeError:
+                        img_bytes = img._data
+                    img_dict[(row, col)] = img_bytes
                 except Exception:
                     pass
     except Exception as e:
         print(f"提取图片警告: {e}")
-    return img_dict
+    return img_dict, ok_col_idx, ng_col_idx
 
 # 加载Excel数据
 def load_excel_robust(file_source):
@@ -115,39 +130,43 @@ def load_excel_robust(file_source):
 def fill_word_template(template_source, row_data, img_data=None):
     doc = docx.Document(template_source)
     
-    # 自动获取今天日期 (如：August 14, 2026)
-    current_date_str = datetime.date.today().strftime('%B %d, %Y')
+    # 获取今天日期，格式匹配模板要求 (例如: Aug 14 2026)
+    current_date_str = datetime.date.today().strftime('%b %d %Y')
     
     # 提取需要的字段数据
     failure_mode_val = str(row_data.get('Failure Mode', '')).strip()
     should_or_not = str(row_data.get('Should or not to do', ''))
     
-    # 解析 Should 和 Should not (应对多种换行和冒号格式)
+    # 精准解析 Should 和 Should not (应对多种换行和全半角冒号)
     should_text, should_not_text = "", ""
-    # 查找 Should: 到 Should not: 之间的内容
-    should_match = re.search(r'Should[:：](.*?)(Should not[:：]|$)', should_or_not, re.DOTALL | re.IGNORECASE)
-    # 查找 Should not: 之后的所有内容
-    should_not_match = re.search(r'Should not[:：](.*)', should_or_not, re.DOTALL | re.IGNORECASE)
+    should_match = re.search(r'Should[:：]\s*(.*?)(?:Should not[:：]|$)', should_or_not, re.DOTALL | re.IGNORECASE)
+    should_not_match = re.search(r'Should not[:：]\s*(.*)', should_or_not, re.DOTALL | re.IGNORECASE)
     
     if should_match:
         should_text = should_match.group(1).strip()
     if should_not_match:
         should_not_text = should_not_match.group(1).strip()
 
+    # 标准化映射表：Word标题名 -> 对应填入的文本内容
     content_map = {
         "Task/Scope": str(row_data.get('LL Supplier Scope', '')),
         "Failure Mode": failure_mode_val,
         "Project/Part name": str(row_data.get('Project/Part name', '')),
         "Process": str(row_data.get('Related Material Field / Process', '')),
         "Problem (Fundamental Problem)": str(row_data.get('LL Brief Description', '')),
-        "Root Cause": str(row_data.get('Root Cause', '')),
-        "Corrective Action": str(row_data.get('Corrective Action', '')),
-        "1.1 What should we do in the future?": should_text,
-        "1.2 What should we not do in the future?": should_not_text,
+        "Root Cause(s)": str(row_data.get('Root Cause', '')),
+        "Corrective Actions": str(row_data.get('Corrective Action', '')),
+        "What should we do in the future?": should_text,
+        "What should we not do in the future?": should_not_text,
     }
 
-    # 遍历Word中所有的段落 (含表格内的段落)
+    # 提取所有段落对象
     all_paragraphs = []
+    for section in doc.sections:
+        for hf in [section.header, section.footer, section.first_page_header, section.first_page_footer, section.even_page_header, section.even_page_footer]:
+            if hf:
+                for p in hf.paragraphs:
+                    all_paragraphs.append(p)
     for p in doc.paragraphs:
         all_paragraphs.append(p)
     for table in doc.tables:
@@ -156,43 +175,31 @@ def fill_word_template(template_source, row_data, img_data=None):
                 for p in cell.paragraphs:
                     all_paragraphs.append(p)
 
-    # 1. 替换日期 & 主标题追加
-    date_pattern = re.compile(r'[A-Z][a-z]{2,8}\s\d{1,2}(st|nd|rd|th)?,\s20\d{2}') # 匹配常见日期如 May 24, 2022
+    # 1. 替换日期 & 主标题追加 & 内容下沉式填入
     for p in all_paragraphs:
-        p_text = p.text
-        
-        # 修复日期
-        if date_pattern.search(p_text) or '2022' in p_text or '2023' in p_text:
-            for run in p.runs:
-                if run.text:
-                    run.text = date_pattern.sub(current_date_str, run.text)
-                    
-        # 修复主标题 (Lesson Learn - Failure Mode)
-        if 'Lesson Learn' in p_text and ('–' in p_text or '-' in p_text):
-            if failure_mode_val and failure_mode_val not in p_text:
-                for i, run in enumerate(p.runs):
-                    if '–' in run.text or '-' in run.text:
-                        run.text = run.text.rstrip(' -–') + f" – {failure_mode_val}"
-                        break
-    
-    # 2. 定位标题并插入内容
-    def set_next_para_text(current_para_index, text_to_insert):
-        if not text_to_insert or pd.isna(text_to_insert) or text_to_insert == 'nan':
-            return
-        if current_para_index + 1 < len(all_paragraphs):
-            next_p = all_paragraphs[current_para_index + 1]
-            next_p.text = str(text_to_insert)
-            # 设置下划线等基础样式
-            if next_p.runs:
-                next_p.runs[0].font.name = 'Arial'
-
-    for i, p in enumerate(all_paragraphs):
         p_clean = p.text.strip()
+        
+        # 强制替换旧版日期 (匹配各种逗号与无逗号格式)
+        if 'May 24 2022' in p_clean or 'May 24, 2022' in p_clean:
+            p.text = p.text.replace('May 24 2022', current_date_str).replace('May 24, 2022', current_date_str)
+            
+        # 修复主标题 (Lesson Learn - Failure Mode)
+        if p_clean == 'Lesson Learn –' or p_clean == 'Lesson Learn -':
+            if failure_mode_val:
+                p.add_run(f" {failure_mode_val}")
+                
+        # 匹配对应的小标题并在其紧挨着的下方注入段落内容
         for key, val in content_map.items():
-            if key in p_clean and len(p_clean) < len(key) + 10: # 确保是标题行
-                set_next_para_text(i, val)
+            if key in p_clean and len(p_clean) < len(key) + 15:
+                if not val or pd.isna(val) or str(val).lower() == 'nan':
+                    continue
+                # 利用底层 XML 直接在新行生造一个段落，避免找寻空白行的错位问题
+                new_p_element = p._element.getparent().create_element('w:p')
+                p._element.addnext(new_p_element)
+                new_p = docx.text.paragraph.Paragraph(new_p_element, p._parent)
+                new_p.text = str(val)
 
-    # 3. 处理图片注入 (OK Picture & NG Picture)
+    # 2. 定点爆破单元格内图片占位符 (OK Picture & NG Picture)
     ok_img_bytes = img_data.get('OK') if img_data else None
     ng_img_bytes = img_data.get('NG') if img_data else None
 
@@ -200,28 +207,25 @@ def fill_word_template(template_source, row_data, img_data=None):
         for row in table.rows:
             for cell in row.cells:
                 cell_text = cell.text.strip()
-                if cell_text == 'OK-Part' or cell_text == 'OK Picture':
-                    cell.text = '' # 清空占位文本
-                    p = cell.paragraphs[0]
-                    p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
-                    if ok_img_bytes:
-                        try:
-                            p.add_run().add_picture(io.BytesIO(ok_img_bytes), width=Inches(3.0))
-                        except Exception:
-                            p.add_run("图片加载失败")
+                if 'OK Picture' in cell_text or 'NG Picture' in cell_text:
+                    if 'OK Picture' in cell_text:
+                        cell.text = cell.text.replace('OK Picture', '').strip()
+                        img_bytes = ok_img_bytes
                     else:
-                        p.add_run("无 OK Picture 图片")
-                elif cell_text == 'Not-OK-Part' or cell_text == 'NG Picture' or cell_text == 'NOK-Part':
-                    cell.text = ''
-                    p = cell.paragraphs[0]
-                    p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
-                    if ng_img_bytes:
-                        try:
-                            p.add_run().add_picture(io.BytesIO(ng_img_bytes), width=Inches(3.0))
-                        except Exception:
-                            p.add_run("图片加载失败")
+                        cell.text = cell.text.replace('NG Picture', '').strip()
+                        img_bytes = ng_img_bytes
+
+                    if not cell.paragraphs:
+                        p = cell.add_paragraph()
                     else:
-                        p.add_run("无 NG Picture 图片")
+                        p = cell.paragraphs[-1]
+                    
+                    p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+                    if img_bytes:
+                        try:
+                            p.add_run().add_picture(io.BytesIO(img_bytes), width=Inches(2.5))
+                        except Exception as e:
+                            p.add_run(f"\n图片加载失败: {e}")
 
     return doc
 
@@ -257,24 +261,18 @@ def generate_eml_file(row_data):
 # 页面渲染主逻辑
 if excel_file is not None and template_file is not None:
     try:
-        # 获取Excel所有底层图片
-        excel_images = {}
-        if not isinstance(excel_file, str):
-            excel_file.seek(0)
-            
+        # 读取数据
         df, sheet_name, header_idx = load_excel_robust(excel_file)
         
-        # 恢复指针再次读取图片
+        # 恢复指针提取底层图片与物理列信息
         if not isinstance(excel_file, str):
             excel_file.seek(0)
-        excel_images_raw = load_excel_images(excel_file, sheet_name)
+        excel_images_raw, ok_col_idx, ng_col_idx = load_excel_images(excel_file, sheet_name)
         
         st.success(f"🎉 成功加载工作表: **{sheet_name}**")
         
         # 寻找匹配列名
         supplier_scope_col = next((c for c in df.columns if 'Supplier Scope' in c or 'Scope' in c or 'Task' in c), 'LL Supplier Scope')
-        ok_col_idx = df.columns.get_loc('OK Picture') if 'OK Picture' in df.columns else -1
-        ng_col_idx = df.columns.get_loc('NG Picture') if 'NG Picture' in df.columns else -1
         
         st.markdown("### 👈 第一步：在下方表格中勾选需要生成的 Record")
         search_term = st.text_input("🔍 快速搜索：")
@@ -301,16 +299,15 @@ if excel_file is not None and template_file is not None:
         
         if len(selected_rows) > 0:
             if st.button("🚀 开始生成 Word 与邮件", type="primary", use_container_width=True):
-                with st.spinner("正在填充模板并提取图片..."):
+                with st.spinner("正在精准填充排版并提取图片..."):
                     
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
                         for idx, (original_df_index, row) in enumerate(selected_rows.iterrows()):
                             
-                            # 计算Excel中真实的物理行号 (0-indexed)。pandas索引 + 表头所在行 + 1 (因为数据从表头下一行开始)
+                            # 获取真实绝对物理行号 (0-indexed)。pandas行号 + header所在行号 + 1
                             excel_row_idx = original_df_index + header_idx + 1
                             
-                            # 提取对应行的图片
                             row_img_data = {
                                 'OK': excel_images_raw.get((excel_row_idx, ok_col_idx)) if ok_col_idx != -1 else None,
                                 'NG': excel_images_raw.get((excel_row_idx, ng_col_idx)) if ng_col_idx != -1 else None
@@ -343,7 +340,7 @@ if excel_file is not None and template_file is not None:
                         mime="application/zip",
                         use_container_width=True
                     )
-                    st.success("✨ 批量生成成功！Word 模板 (含图片) 与配套邮件草稿已全部打包完毕。")
+                    st.success("✨ 批量生成成功！Word 模板 (含完美排版与图片) 与配套邮件草稿已全部打包完毕。")
         else:
             st.warning("👉 请在上方勾选生成的记录。")
             
@@ -352,6 +349,9 @@ if excel_file is not None and template_file is not None:
         st.info("排查提示：请确认 Excel 文件未被打开，且环境中已安装 `openpyxl` 库处理图片。")
 else:
     st.info("ℹ️ 请在侧边栏上传 Excel 与 Word 模板。")
+
+ 
+
 
 
 
