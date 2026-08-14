@@ -250,6 +250,7 @@ def fill_word_template(template_source, row_data):
         try:
             p = Paragraph(p_elem, doc)
             replaced = False
+            ans_p = None
             
             if p_idx + 1 < len(body_p_elements):
                 next_p_elem = body_p_elements[p_idx + 1]
@@ -264,43 +265,30 @@ def fill_word_template(template_source, row_data):
                                 is_another_heading = True
                                 
                     if not is_another_heading:
-                        # 【核心格式强制覆盖】清空文字并强制使用标准格式，摒弃隐藏样式
-                        next_p.text = ""
-                        try:
-                            next_p.style = doc.styles['Normal']
-                        except:
-                            pass
-                        next_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                        next_p.paragraph_format.left_indent = None
-                        
-                        run = next_p.add_run(str(val))
-                        run.font.name = 'Arial'
-                        run.font.size = Pt(10.5)
-                        run.font.bold = False
+                        ans_p = next_p
                         replaced = True
                         
             if not replaced:
-                # 【核心格式强制覆盖】新建的段落同样强制规范格式
-                new_p = doc.add_paragraph()
-                try:
-                    new_p.style = doc.styles['Normal']
-                except:
-                    pass
-                new_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                new_p.paragraph_format.left_indent = None
+                new_p_element = p._element.getparent().create_element('w:p')
+                p._element.addnext(new_p_element)
+                ans_p = Paragraph(new_p_element, p._parent)
                 
-                run = new_p.add_run(str(val))
+            if ans_p is not None:
+                # 【杀手锏】暴力粉碎底层 `<w:pPr>`，彻底清除模板残留的缩进、居中和行距杂质
+                if ans_p._element.pPr is not None:
+                    ans_p._element.remove(ans_p._element.pPr)
+                
+                ans_p.text = ""
+                # 重新赋予最纯净的标准格式（左对齐，Arial，10.5号，不加粗）
+                run = ans_p.add_run(str(val))
                 run.font.name = 'Arial'
                 run.font.size = Pt(10.5)
                 run.font.bold = False
                 
-                # 插入到当前标题的后方
-                p._element.addnext(new_p._element)
-                
         except Exception:
             pass
             
-    # 【图片错位清理逻辑】
+    # 【图片填充】同样加入底层格式重置，防止图片插入后错位偏移
     ok_img = row_data.get('OK Picture Bytes')
     ng_img = row_data.get('NG Picture Bytes')
     
@@ -328,8 +316,10 @@ def fill_word_template(template_source, row_data):
                     if "ok-part" in p_text_lower:
                         continue
                     if not inserted:
+                        if p._element.pPr is not None:
+                            p._element.remove(p._element.pPr)
                         p.text = "" 
-                        p.alignment = 1
+                        p.alignment = 1 # 清洗完再赋予居中，保证居中得纯粹无偏移
                         r = p.add_run()
                         r.add_picture(io.BytesIO(ok_img), width=Inches(2.5))
                         inserted = True
@@ -349,6 +339,8 @@ def fill_word_template(template_source, row_data):
                     if "not-ok-part" in p_text_lower:
                         continue
                     if not inserted:
+                        if p._element.pPr is not None:
+                            p._element.remove(p._element.pPr)
                         p.text = ""
                         p.alignment = 1
                         r = p.add_run()
@@ -427,7 +419,6 @@ if excel_file is not None and template_file is not None:
         df, sheet_name, header_idx = load_excel_robust(excel_file)
         st.success(f"🎉 成功加载工作表: **{sheet_name}** (表头定位自第 {header_idx + 1} 行)")
         
-        # 判断 LL Need or not 列并过滤
         ll_need_col = 'LL Need or not'
         if ll_need_col not in df.columns:
             for col in df.columns:
