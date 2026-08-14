@@ -112,7 +112,6 @@ def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
                 
         return ok_img, ng_img
     except Exception as e:
-        print("图片提取提示 (这通常不会影响文本生成):", e)
         return None, None
 
 # 核心逻辑：加载 Excel，智能识别 Sheet 和表头行
@@ -158,10 +157,9 @@ def fill_word_template(template_source, row_data):
     from docx.text.paragraph import Paragraph
     from docx.shared import Inches
     
-    current_date_str = datetime.date.today().strftime('%B %d %Y')
-    
+    # 获取当天日期，例如格式 "October 24 2024"
+    current_date_str = datetime.date.today().strftime('%b %d %Y')
     failure_mode_str = str(row_data.get('Failure Mode', '')).strip()
-    
     ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
     
     all_p_elements = []
@@ -180,32 +178,31 @@ def fill_word_template(template_source, row_data):
             
     all_p_elements = list(set(all_p_elements))
     
+    # 第一层替换：修复日期断层、追加标题
     for p_elem in all_p_elements:
         t_elems = p_elem.findall('.//w:t', ns)
+        if not t_elems:
+            continue
+            
         p_text = "".join([t.text for t in t_elems if t.text])
-        p_text_normalized = " ".join(p_text.lower().split())
+        p_text_lower = p_text.lower()
         
-        if 'may 24 2022' in p_text_normalized:
-            for t in t_elems:
-                if t.text:
-                    if 'May 24 2022' in t.text:
-                        t.text = t.text.replace('May 24 2022', current_date_str)
-                    if 'May 24, 2022' in t.text:
-                        t.text = t.text.replace('May 24, 2022', current_date_str)
-                        
-        if 'lesson' in p_text_normalized and 'learn' in p_text_normalized and len(p_text_normalized) < 50:
+        # 【修复2】无死角完整替换右侧及页脚的日期（合并XML碎片）
+        if 'may 24 2022' in p_text_lower:
+            new_text = p_text.replace('May 24 2022', current_date_str).replace('May 24, 2022', current_date_str)
+            t_elems[0].text = new_text
+            for t in t_elems[1:]:
+                t.text = ""
+                
+        # 覆盖标题逻辑
+        if 'lesson learn' in p_text_lower and len(p_text_lower) < 60:
             if failure_mode_str and failure_mode_str not in p_text:
                 p_text_clean = p_text.strip().rstrip("–-—: ").strip()
                 new_val = f"{p_text_clean} – {failure_mode_str}"
                 
-                if t_elems:
-                    t_elems[0].text = new_val
-                    for t in t_elems[1:]:
-                        t.text = ""
-                else:
-                    r_elem = ET.SubElement(p_elem, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r')
-                    t_elem = ET.SubElement(r_elem, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
-                    t_elem.text = new_val
+                t_elems[0].text = new_val
+                for t in t_elems[1:]:
+                    t.text = ""
 
     # 智能解析拆分 Should or not to do
     should_or_not = str(row_data.get('Should or not to do', ''))
@@ -220,26 +217,27 @@ def fill_word_template(template_source, row_data):
 
     body_p_elements = doc._body._body.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p')
     
-    # 全新的映射字典
+    # 映射字典
     headings_config = [
         {
-            'keys': ['Task/Scope', 'Task', 'Scope'],
+            # 【修复1】确保准确匹配到 1 Task/Scope
+            'keys': ['1 Task/Scope', 'Task/Scope', 'Task', 'Scope'],
             'value': row_data.get('LL Supplier Scope', '')
         },
         {
-            'keys': ['Failure Mode'],
+            'keys': ['2 Failure Mode', 'Failure Mode'],
             'value': row_data.get('Failure Mode', '')
         },
         {
-            'keys': ['Project/Part name', 'Product / Process'],
+            'keys': ['3 Project/Part name', 'Project/Part name', 'Product / Process'],
             'value': row_data.get('Project/Part name', '')
         },
         {
-            'keys': ['Process'],
+            'keys': ['4 Process', 'Process'],
             'value': row_data.get('Related Material Field / Process', '')
         },
         {
-            'keys': ['Problem (Fundamental Problem)', 'Problem'],
+            'keys': ['5 Problem (Fundamental Problem)', 'Problem (Fundamental Problem)', 'Problem'],
             'value': row_data.get('LL Brief Description', '')
         },
         {
@@ -309,7 +307,7 @@ def fill_word_template(template_source, row_data):
         except Exception:
             pass
             
-    # 执行图片填充逻辑
+    # 【修复3】执行图片排他性逻辑，及限制最大自适应宽度
     ok_img = row_data.get('OK Picture Bytes')
     ng_img = row_data.get('NG Picture Bytes')
     
@@ -329,20 +327,22 @@ def fill_word_template(template_source, row_data):
             ng_cell = None
             for row in pic_table.rows:
                 for cell in row.cells:
-                    if "OK-Part" in cell.text:
-                        ok_cell = cell
+                    # 使用严格的排他性匹配，防止 OK-Part 被 Not-OK-Part 截胡
                     if "Not-OK-Part" in cell.text:
                         ng_cell = cell
+                    elif "OK-Part" in cell.text:
+                        ok_cell = cell
             
+            # 引入 Inches(2.9) 约为单元格宽度，让 docx 自动帮图片缩放到对应宽度，解决撑断层和大小不一致问题
             if ok_img and ok_cell:
                 p = ok_cell.add_paragraph()
                 r = p.add_run()
-                r.add_picture(io.BytesIO(ok_img), width=Inches(2.5))
+                r.add_picture(io.BytesIO(ok_img), width=Inches(2.9))
                 
             if ng_img and ng_cell:
                 p = ng_cell.add_paragraph()
                 r = p.add_run()
-                r.add_picture(io.BytesIO(ng_img), width=Inches(2.5))
+                r.add_picture(io.BytesIO(ng_img), width=Inches(2.9))
                                 
     return doc
 
@@ -464,7 +464,6 @@ if excel_file is not None and template_file is not None:
                         row = selected_rows.iloc[0]
                         target_idx = row.name
                         
-                        # 提取当前行的对应图片
                         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, target_idx)
                         
                         row_data = {
