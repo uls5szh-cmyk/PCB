@@ -187,7 +187,7 @@ def fill_word_template(template_source, row_data):
         p_text = "".join([t.text for t in t_elems if t.text])
         p_text_lower = p_text.lower()
         
-        # 【修复2】无死角完整替换右侧及页脚的日期（合并XML碎片）
+        # 完整替换右侧及页脚的日期（合并XML碎片）
         if 'may 24 2022' in p_text_lower:
             new_text = p_text.replace('May 24 2022', current_date_str).replace('May 24, 2022', current_date_str)
             t_elems[0].text = new_text
@@ -220,24 +220,24 @@ def fill_word_template(template_source, row_data):
     # 映射字典
     headings_config = [
         {
-            # 【修复1】确保准确匹配到 1 Task/Scope
-            'keys': ['1 Task/Scope', 'Task/Scope', 'Task', 'Scope'],
+            # 还原为标准文本匹配逻辑
+            'keys': ['Task/Scope', 'Task'],
             'value': row_data.get('LL Supplier Scope', '')
         },
         {
-            'keys': ['2 Failure Mode', 'Failure Mode'],
+            'keys': ['Failure Mode'],
             'value': row_data.get('Failure Mode', '')
         },
         {
-            'keys': ['3 Project/Part name', 'Project/Part name', 'Product / Process'],
+            'keys': ['Project/Part name', 'Product / Process'],
             'value': row_data.get('Project/Part name', '')
         },
         {
-            'keys': ['4 Process', 'Process'],
+            'keys': ['Process'],
             'value': row_data.get('Related Material Field / Process', '')
         },
         {
-            'keys': ['5 Problem (Fundamental Problem)', 'Problem (Fundamental Problem)', 'Problem'],
+            'keys': ['Problem (Fundamental Problem)', 'Problem'],
             'value': row_data.get('LL Brief Description', '')
         },
         {
@@ -307,7 +307,7 @@ def fill_word_template(template_source, row_data):
         except Exception:
             pass
             
-    # 【修复3】执行图片排他性逻辑，及限制最大自适应宽度
+    # 执行图片排他性逻辑，及限制最大自适应宽度
     ok_img = row_data.get('OK Picture Bytes')
     ng_img = row_data.get('NG Picture Bytes')
     
