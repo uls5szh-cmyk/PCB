@@ -307,7 +307,7 @@ def fill_word_template(template_source, row_data):
         except Exception:
             pass
             
-    # 执行图片排他性逻辑，及限制最大自适应宽度
+    # 【修复图片填充】执行排他性逻辑，替换占位符，限制自适应宽度防换页
     ok_img = row_data.get('OK Picture Bytes')
     ng_img = row_data.get('NG Picture Bytes')
     
@@ -327,22 +327,43 @@ def fill_word_template(template_source, row_data):
             ng_cell = None
             for row in pic_table.rows:
                 for cell in row.cells:
-                    # 使用严格的排他性匹配，防止 OK-Part 被 Not-OK-Part 截胡
                     if "Not-OK-Part" in cell.text:
                         ng_cell = cell
                     elif "OK-Part" in cell.text:
                         ok_cell = cell
             
-            # 引入 Inches(2.9) 约为单元格宽度，让 docx 自动帮图片缩放到对应宽度，解决撑断层和大小不一致问题
+            # OK 图片处理：清空 "OK Picture" 文字，原地插入
             if ok_img and ok_cell:
-                p = ok_cell.add_paragraph()
-                r = p.add_run()
-                r.add_picture(io.BytesIO(ok_img), width=Inches(2.9))
-                
+                inserted = False
+                for p in ok_cell.paragraphs:
+                    p_text_clean = p.text.lower().replace(" ", "")
+                    if "okpicture" in p_text_clean:
+                        p.text = ""  # 清空占位文字
+                        r = p.add_run()
+                        # 宽度限制为2.5英寸，防止图片过高把表格撑破到第二页
+                        r.add_picture(io.BytesIO(ok_img), width=Inches(2.5))
+                        inserted = True
+                        break
+                if not inserted:
+                    p = ok_cell.add_paragraph()
+                    r = p.add_run()
+                    r.add_picture(io.BytesIO(ok_img), width=Inches(2.5))
+                    
+            # NG 图片处理：清空 "NGPicture" 或 "NG Picture" 文字，原地插入
             if ng_img and ng_cell:
-                p = ng_cell.add_paragraph()
-                r = p.add_run()
-                r.add_picture(io.BytesIO(ng_img), width=Inches(2.9))
+                inserted = False
+                for p in ng_cell.paragraphs:
+                    p_text_clean = p.text.lower().replace(" ", "")
+                    if "ngpicture" in p_text_clean:
+                        p.text = ""  # 清空占位文字
+                        r = p.add_run()
+                        r.add_picture(io.BytesIO(ng_img), width=Inches(2.5))
+                        inserted = True
+                        break
+                if not inserted:
+                    p = ng_cell.add_paragraph()
+                    r = p.add_run()
+                    r.add_picture(io.BytesIO(ng_img), width=Inches(2.5))
                                 
     return doc
 
