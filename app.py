@@ -152,7 +152,8 @@ def load_excel_robust(file_source):
 def fill_word_template(template_source, row_data):
     doc = docx.Document(template_source)
     from docx.text.paragraph import Paragraph
-    from docx.shared import Inches
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     
     current_date_str = datetime.date.today().strftime('%b %d %Y')
     failure_mode_str = str(row_data.get('Failure Mode', '')).strip()
@@ -208,7 +209,6 @@ def fill_word_template(template_source, row_data):
 
     body_p_elements = doc._body._body.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p')
     
-    # 增加额外的四项匹配
     headings_config = [
         {'keys': ['Task/Scope', 'Task'], 'value': row_data.get('LL Supplier Scope', '')},
         {'keys': ['Failure Mode'], 'value': row_data.get('Failure Mode', '')},
@@ -262,15 +262,41 @@ def fill_word_template(template_source, row_data):
                         for key in config['keys']:
                             if key in next_text:
                                 is_another_heading = True
+                                
                     if not is_another_heading:
-                        next_p.text = str(val)
+                        # 【核心格式强制覆盖】清空文字并强制使用标准格式，摒弃隐藏样式
+                        next_p.text = ""
+                        try:
+                            next_p.style = doc.styles['Normal']
+                        except:
+                            pass
+                        next_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        next_p.paragraph_format.left_indent = None
+                        
+                        run = next_p.add_run(str(val))
+                        run.font.name = 'Arial'
+                        run.font.size = Pt(10.5)
+                        run.font.bold = False
                         replaced = True
                         
             if not replaced:
-                new_p_element = p._element.getparent().create_element('w:p')
-                p._element.addnext(new_p_element)
-                new_para = Paragraph(new_p_element, p._parent)
-                new_para.text = str(val)
+                # 【核心格式强制覆盖】新建的段落同样强制规范格式
+                new_p = doc.add_paragraph()
+                try:
+                    new_p.style = doc.styles['Normal']
+                except:
+                    pass
+                new_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                new_p.paragraph_format.left_indent = None
+                
+                run = new_p.add_run(str(val))
+                run.font.name = 'Arial'
+                run.font.size = Pt(10.5)
+                run.font.bold = False
+                
+                # 插入到当前标题的后方
+                p._element.addnext(new_p._element)
+                
         except Exception:
             pass
             
@@ -473,7 +499,6 @@ if excel_file is not None and template_file is not None:
                         
                         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, target_idx)
                         
-                        # 把新增的四项加到字典里传递给填充函数
                         row_data = {
                             'LL Serials No': row.get(serial_no_col, 'LL-xxxx-xx'),
                             'Failure Mode': row.get('Failure Mode', '*****'),
