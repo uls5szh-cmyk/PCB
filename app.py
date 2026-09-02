@@ -1,19 +1,18 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (Standard FEBER Aligned Edition)
-- Hanging Indent & Tab-Stop Aligned Abstract Section
-- Robust Problem Paragraph Injection (100% Filled)
-- Universal 'Picture – Product – Defect' NG Image Embedding
-- 3-Column Lessons Table Dynamic Row Population (Tab & Pipe Delimited)
-- 4-Row Potentially Affected Precise Population
+BOSCH | PCB Lesson Learn Quality Studio (Exact Mirror & Direct Textbox Image Edition)
+- Deep Textbox Penetration: Directly embeds NG Picture into 'Picture – Product – Defect'
+- 1:1 Mirror Prompt with Full 3-Column Tables for Teams M-PU Bot
+- Direct Table-Cell & Abstract Section Population (100% Openable DOCX)
+- Recipient-Ready Outlook EML Draft Generation with Word Attachment
 =============================================================================
 """
 
 import streamlit as st
 import pandas as pd
 import docx
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 import datetime
@@ -54,12 +53,31 @@ BOSCH_UI_STYLE = """
         border-radius: 3px;
         margin-bottom: 20px;
     }
+    .bds-card {
+        background: #FFFFFF;
+        border: 1px solid #DDE3EA;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 12px rgba(0, 40, 80, 0.04);
+    }
+    .bds-step-badge {
+        display: inline-block;
+        background: var(--bosch-blue);
+        color: #FFFFFF;
+        font-size: 0.8rem;
+        font-weight: 700;
+        padding: 4px 12px;
+        border-radius: 20px;
+        margin-bottom: 10px;
+    }
     .stButton>button {
         background-color: var(--bosch-blue);
         color: white;
         border-radius: 4px;
         font-weight: 600;
         border: none;
+        padding: 8px 20px;
     }
     .stButton>button:hover {
         background-color: var(--bosch-light-blue);
@@ -74,7 +92,7 @@ st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
         <h2 style="color: #005691; margin-bottom: 2px;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 标准深度对齐 · 3列表格逐行精准映射 · 4项评估表格精准回填 · 邮件草稿一键闭环</p>
+        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 质量报告规范 · 原始数据无损组装 ➔ M-PU Bot 润色 ➔ 文本框图文精准回填 ➔ 邮件一键闭环</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -106,19 +124,17 @@ else:
     if up_template: template_file = up_template
 
 # -----------------------------------------------------------------------------
-# 3. 辅助解析函数
+# 3. 辅助解析函数（含安全指针重置）
 # -----------------------------------------------------------------------------
 
 def load_supplier_emails(file_source):
     """从 Vendor code 表中读取供应商与邮箱映射"""
     try:
-        if hasattr(file_source, 'seek'):
-            file_source.seek(0)
+        if hasattr(file_source, 'seek'): file_source.seek(0)
         xl = pd.ExcelFile(file_source)
         if 'Vendor code' not in xl.sheet_names:
             return {}
-        if hasattr(file_source, 'seek'):
-            file_source.seek(0)
+        if hasattr(file_source, 'seek'): file_source.seek(0)
         df_vendor = pd.read_excel(file_source, sheet_name='Vendor code')
         df_vendor.columns = df_vendor.columns.astype(str).str.strip()
         
@@ -144,43 +160,40 @@ def load_supplier_emails(file_source):
     return {}
 
 def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
-    """从 Excel 指定行提取 OK 和 NG 图片二进制流"""
+    """从 Excel 指定行提取 NG Picture"""
     try:
-        if hasattr(file_source, 'seek'):
-            file_source.seek(0)
+        if hasattr(file_source, 'seek'): file_source.seek(0)
         wb = openpyxl.load_workbook(file_source, data_only=True)
         ws = wb[sheet_name]
         
-        col_ng, col_ok = -1, -1
+        col_ng = -1
         for col_idx in range(1, ws.max_column + 1):
             val = ws.cell(row=header_idx + 1, column=col_idx).value
             if val:
                 val_str = str(val).strip()
-                if 'NG Picture' in val_str: col_ng = col_idx - 1
-                if 'OK Picture' in val_str: col_ok = col_idx - 1
+                if 'NG Picture' in val_str:
+                    col_ng = col_idx - 1
+                    break
                 
         excel_target_row = header_idx + 1 + target_row_idx
-        ok_img, ng_img = None, None
+        ng_img = None
         
         for img in getattr(ws, '_images', []):
             try:
                 r = img.anchor._from.row
                 c = img.anchor._from.col
-                if r == excel_target_row:
-                    if c == col_ng:
-                        ng_img = img._data()
-                    elif c == col_ok:
-                        ok_img = img._data()
+                if r == excel_target_row and c == col_ng:
+                    ng_img = img._data()
+                    break
             except Exception:
                 pass
-        return ok_img, ng_img
+        return ng_img
     except Exception:
-        return None, None
+        return None
 
 def load_excel_robust(file_source):
     """加载 Excel 并定位表头"""
-    if hasattr(file_source, 'seek'):
-        file_source.seek(0)
+    if hasattr(file_source, 'seek'): file_source.seek(0)
     xl = pd.ExcelFile(file_source)
     sheet_names = xl.sheet_names
     
@@ -188,8 +201,7 @@ def load_excel_robust(file_source):
     if not target_sheet:
         target_sheet = next((s for s in sheet_names if "Overall" in s or "LL" in s), sheet_names[0])
         
-    if hasattr(file_source, 'seek'):
-        file_source.seek(0)
+    if hasattr(file_source, 'seek'): file_source.seek(0)
     df_temp = pd.read_excel(file_source, sheet_name=target_sheet, nrows=10, header=None)
     header_idx = 1 
     for idx, row in df_temp.iterrows():
@@ -198,18 +210,17 @@ def load_excel_robust(file_source):
             header_idx = idx
             break
             
-    if hasattr(file_source, 'seek'):
-        file_source.seek(0)
+    if hasattr(file_source, 'seek'): file_source.seek(0)
     df = pd.read_excel(file_source, sheet_name=target_sheet, header=header_idx)
     df.columns = df.columns.astype(str).str.strip()
     return df, target_sheet, header_idx
 
 # -----------------------------------------------------------------------------
-# 4. 深度解析 Bot 回复（支持制表符 \t 与 Markdown 表格双模式）
+# 4. 高鲁棒性 Bot 输出解析器 (支持制表符 \t 与 Markdown 表格)
 # -----------------------------------------------------------------------------
 
 def parse_bot_feber_response(bot_text):
-    """解析 Bot 按照 FEBER 规范输出的结构化文本与 3 列表格"""
+    """解析 Bot 输出的文本与 3 列表格"""
     parsed = {
         'Abstract_Issue': '',
         'Abstract_Problem': '',
@@ -225,18 +236,18 @@ def parse_bot_feber_response(bot_text):
         'Who': ''
     }
     
-    # 0. Abstract 拆分解析
+    # 0. Abstract
     m_abs = re.search(r'(?:0\.\s*Abstract|Abstract)\s*([\s\S]*?)(?=1\.\s*Product|$)', bot_text, re.I)
     if m_abs:
         t = m_abs.group(1)
         i_m = re.search(r'Issue:\s*([\s\S]*?)(?=Problem:|$)', t, re.I)
         p_m = re.search(r'Problem:\s*([\s\S]*?)(?=Lessons:|$)', t, re.I)
-        l_m = re.search(r'Lessons:\s*([\s\S]*?)(?=Tags:|Picture|$)', t, re.I)
+        l_m = re.search(r'Lessons:\s*([\s\S]*?)(?=Tags:|Picture|1\.\s*Product|$)', t, re.I)
         if i_m: parsed['Abstract_Issue'] = i_m.group(1).strip()
         if p_m: parsed['Abstract_Problem'] = p_m.group(1).strip()
         if l_m: parsed['Abstract_Lessons'] = l_m.group(1).strip()
     
-    # 1. Product / Process 拆分解析
+    # 1. Product / Process
     m_p = re.search(r'1\.\s*Product\s*/\s*Process\s*([\s\S]*?)(?=2\.\s*Problem|$)', bot_text, re.I)
     if m_p:
         t = m_p.group(1)
@@ -252,30 +263,23 @@ def parse_bot_feber_response(bot_text):
     if m_prob:
         parsed['Problem'] = m_prob.group(1).strip()
     
-    # 3. Lessons (支持制表符 \t 分割与 Markdown | 分割双引擎)
+    # 3. Lessons (支持制表符 \t 与 Markdown | 双模式)
     m_less = re.search(r'3\.\s*Lessons[^\n]*\n([\s\S]*?)(?=4\.\s*Potentially|$)', bot_text, re.I)
     if m_less:
         less_text = m_less.group(1).strip()
         raw_lines = [l.strip() for l in less_text.split('\n') if l.strip()]
-        
         for line in raw_lines:
             if "measures & sustainable solutions" in line.lower() or "---" in line or line.startswith("| :---") or line.startswith("Lessons\t"):
                 continue
             if '\t' in line:
                 parts = [p.strip() for p in line.split('\t')]
-                if len(parts) >= 3:
-                    parsed['Lessons_Rows'].append((parts[0], parts[1], parts[2]))
-                elif len(parts) == 2:
-                    parsed['Lessons_Rows'].append((parts[0], parts[1], ""))
-                elif len(parts) == 1:
-                    parsed['Lessons_Rows'].append((parts[0], "", ""))
+                if len(parts) >= 3: parsed['Lessons_Rows'].append((parts[0], parts[1], parts[2]))
+                elif len(parts) == 2: parsed['Lessons_Rows'].append((parts[0], parts[1], ""))
+                elif len(parts) == 1: parsed['Lessons_Rows'].append((parts[0], "", ""))
             elif '|' in line:
                 parts = [p.strip() for p in line.split('|')[1:-1]]
-                if len(parts) >= 3:
-                    parsed['Lessons_Rows'].append((parts[0], parts[1], parts[2]))
-                elif len(parts) == 2:
-                    parsed['Lessons_Rows'].append((parts[0], parts[1], ""))
-                    
+                if len(parts) >= 3: parsed['Lessons_Rows'].append((parts[0], parts[1], parts[2]))
+                elif len(parts) == 2: parsed['Lessons_Rows'].append((parts[0], parts[1], ""))
         if not parsed['Lessons_Rows']:
             parsed['Lessons_Rows'].append((less_text, "", ""))
             
@@ -295,7 +299,7 @@ def parse_bot_feber_response(bot_text):
     return parsed
 
 # -----------------------------------------------------------------------------
-# 5. 精准装配 Word 模板核心函数 (100% 对应单元格与段落)
+# 5. 精准装配 Word 模板核心函数 (穿透文本框插入不良图片)
 # -----------------------------------------------------------------------------
 
 def set_cell_formatted_text(cell, text):
@@ -309,7 +313,7 @@ def set_cell_formatted_text(cell, text):
     run.font.bold = False
 
 def set_aligned_field_paragraph(p, label, value, indent_inches=1.0):
-    """为 Abstract 区域设置悬挂缩进（Hanging Indent），使冒号后的文字整齐对齐"""
+    """为 Abstract 区域设置悬挂缩进（Hanging Indent），使冒号后的文字严格垂直左对齐"""
     p.text = ""
     p.paragraph_format.left_indent = Inches(indent_inches)
     p.paragraph_format.first_line_indent = Inches(-indent_inches)
@@ -329,8 +333,7 @@ def set_aligned_field_paragraph(p, label, value, indent_inches=1.0):
 
 def replace_field_value_in_doc(doc, field_label, new_value, is_abstract=False):
     """精准查找字段标签并更新值"""
-    if not new_value:
-        return
+    if not new_value: return
     for p in doc.paragraphs:
         if field_label.lower() in p.text.lower():
             if is_abstract:
@@ -350,12 +353,10 @@ def replace_field_value_in_doc(doc, field_label, new_value, is_abstract=False):
 
 def insert_content_under_heading(doc, heading_kw, text_value):
     """在指定标题下方安全插入内容段落（彻底解决 2 Problem 空白问题）"""
-    if not text_value:
-        return
+    if not text_value: return
     for idx, p in enumerate(doc.paragraphs):
         p_txt = p.text.strip().lower()
         if heading_kw.lower() in p_txt and len(p_txt) < 50:
-            # 找到标题段落，在其下方创建一个全新段落节点
             new_p_elem = OxmlElement('w:p')
             p._element.addnext(new_p_elem)
             new_p = docx.text.paragraph.Paragraph(new_p_elem, doc)
@@ -366,14 +367,41 @@ def insert_content_under_heading(doc, heading_kw, text_value):
             r.font.bold = False
             return
 
-def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
+def insert_ng_picture_into_defect_box(doc, ng_img):
+    """
+    【核心穿透函数】穿透扫描文本框和形状，在 'Picture – Product – Defect' 中插入不良图片
+    """
+    if not ng_img:
+        return
+    ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+    
+    # 1. 扫描底层所有段落节点（包括 w:txbxContent 文本框内的段落）
+    all_p_elements = doc._element.findall('.//w:p', ns)
+    for p_elem in all_p_elements:
+        full_text = "".join(p_elem.itertext()).lower().replace(" ", "")
+        if "picture" in full_text and ("defect" in full_text or "product" in full_text) and len(full_text) < 40:
+            p_obj = docx.text.paragraph.Paragraph(p_elem, doc)
+            p_obj.text = ""
+            p_obj.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_obj.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.5))
+            return
+            
+    # 2. 兜底扫描普通段落
+    for p in doc.paragraphs:
+        p_txt_clean = p.text.lower().replace(" ", "")
+        if "picture" in p_txt_clean and ("defect" in p_txt_clean or "product" in p_txt_clean) and len(p_txt_clean) < 40:
+            p.text = ""
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.5))
+            return
+
+def populate_docx_exact_tables(template_source, bot_data, raw_row, ng_img=None):
     """
     【表格定向精准装配引擎】
     - 0. Abstract -> 对齐分离回填 Issue / Problem / Lessons
-    - Picture – Product – Defect -> 自动插入不良图片 (NG Picture)
+    - Picture – Product – Defect -> 穿透插入不良图片 (NG Picture)
     - 1. Product/Process -> 分离回填 Product/Process / Component / Sub-Component
     - 2. Problem -> 精准注入正文段落
-    - Pictures -> 图片表格 (OK-Part / Not-OK-Part)
     - 3. Lessons -> 3列表格 (Lessons | Measures & Sustainable Solutions | Root Cause) 逐行动态增行
     - 4. Potentially affected -> 2列4行表格 (What else / Where / When / Who)
     """
@@ -401,15 +429,8 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
     replace_field_value_in_doc(doc, "Problem:", abs_prob, is_abstract=True)
     replace_field_value_in_doc(doc, "Lessons:", abs_less, is_abstract=True)
 
-    # 3. 在 'Picture – Product – Defect' 专属位置插入不良图片 (NG Picture)
-    if ng_img:
-        for idx, p in enumerate(doc.paragraphs):
-            p_txt_clean = p.text.lower().replace(" ", "")
-            if "picture" in p_txt_clean and ("defect" in p_txt_clean or "product" in p_txt_clean) and len(p_txt_clean) < 40:
-                p.text = ""
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.5))
-                break
+    # 3. 在 'Picture – Product – Defect' 专属位置插入不良图片 (穿透文本框)
+    insert_ng_picture_into_defect_box(doc, ng_img)
 
     # 4. 精准独立填充 1. Product / Process
     pp_val = bot_data.get('Product_Process') or raw_row.get('Related Material Field / Process', '')
@@ -420,31 +441,16 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
     replace_field_value_in_doc(doc, "Component:", comp_val)
     replace_field_value_in_doc(doc, "Sub-Component:", sub_val)
 
-    # 5. 填充 2. Problem (Fundamental Problem) -> 采用 addnext 确保不漏填
+    # 5. 填充 2. Problem (Fundamental Problem) -> 采用 addnext 确保 100% 写入
     prob_val = bot_data.get('Problem') or raw_row.get('LL Brief Description', '')
     insert_content_under_heading(doc, "Problem (Fundamental Problem)", prob_val)
 
-    # 6. 定向精准填充各个表格 (Pictures / 3. Lessons / 4. Potentially affected)
+    # 6. 定向精准填充各个表格 (3. Lessons / 4. Potentially affected)
     for table in doc.tables:
         t_header = "".join(cell.text for cell in table.rows[0].cells).lower()
         
-        # A. 锁定 Pictures 表格 (OK-Part / Not-OK-Part)
-        if "ok-part" in t_header or "not-ok-part" in t_header or (len(table.columns) == 2 and len(table.rows) <= 2):
-            for row in table.rows:
-                for cell in row.cells:
-                    if "ok-part" in cell.text.lower() and ok_img:
-                        cell.text = "OK-Part\n"
-                        p = cell.paragraphs[0]
-                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        p.add_run().add_picture(io.BytesIO(ok_img), width=Inches(2.4))
-                    elif "not-ok-part" in cell.text.lower() and ng_img:
-                        cell.text = "Not-OK-Part\n"
-                        p = cell.paragraphs[0]
-                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.4))
-                        
-        # B. 锁定 3. Lessons (3列对策表：Lessons | Measures & Sustainable Solutions | Root Cause)
-        elif "lessons" in t_header and ("measures" in t_header or "root cause" in t_header):
+        # A. 锁定 3. Lessons (3列对策表：Lessons | Measures & Sustainable Solutions | Root Cause)
+        if "lessons" in t_header and ("measures" in t_header or "root cause" in t_header):
             lessons_rows = bot_data.get('Lessons_Rows', [])
             if not lessons_rows:
                 lessons_rows = [(
@@ -456,13 +462,13 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
             while len(table.rows) > 1:
                 tr = table.rows[-1]._tr
                 table._tbl.remove(tr)
-            # 动态根据解析出来的条目数多行写入 3 个单元格
+            # 动态根据条目多行写入 3 个独立单元格
             for row_tuple in lessons_rows:
                 new_row = table.add_row()
                 for c_idx in range(min(3, len(row_tuple))):
                     set_cell_formatted_text(new_row.cells[c_idx], row_tuple[c_idx])
 
-        # C. 锁定 4. Potentially affected (2列 4行评估表格)
+        # B. 锁定 4. Potentially affected (2列 4行评估表格)
         elif "what else" in t_header or "potentially" in t_header or len(table.rows) == 4:
             w_map = {
                 0: bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Other PCB suppliers manufacturing multilayer boards using similar pattern plating processes.',
@@ -526,7 +532,7 @@ def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_T
     return msg.as_bytes()
 
 # -----------------------------------------------------------------------------
-# 6. 主交互流程
+# 6. 主交互流程 (BDS 2.0 工业级卡片流)
 # -----------------------------------------------------------------------------
 
 if excel_file is not None and template_file is not None:
@@ -543,9 +549,11 @@ if excel_file is not None and template_file is not None:
         serial_no_col = next((c for c in df.columns if 'serial' in str(c).lower()), 'LL Serials No')
         supplier_scope_col = next((c for c in df.columns if 'scope' in str(c).lower() or 'task' in str(c).lower()), 'LL Supplier Scope')
         
-        # 步骤 1：选择记录
-        st.markdown("### 1️⃣ 步骤一：选择需要处理的台账记录")
-        search_kw = st.text_input("🔍 搜索记录 (序列号/供应商/失效模式):")
+        # ==================== STEP 1 ====================
+        st.markdown('<div class="bds-card">', unsafe_allow_html=True)
+        st.markdown('<span class="bds-step-badge">STEP 1</span> <h4 style="display:inline; margin-left:8px; color:#005691;">选择台账记录并提取事实</h4>', unsafe_allow_html=True)
+        
+        search_kw = st.text_input("🔍 搜索记录 (序列号/供应商/失效模式):", placeholder="输入关键字实时过滤...")
         filtered_df = df.copy()
         if search_kw:
             filtered_df = df[df.astype(str).apply(lambda r: r.str.contains(search_kw, case=False).any(), axis=1)]
@@ -555,9 +563,10 @@ if excel_file is not None and template_file is not None:
             options=filtered_df.index,
             format_func=lambda x: f"[{filtered_df.loc[x, serial_no_col]}] {filtered_df.loc[x, 'Failure Mode']} - {filtered_df.loc[x, 'Project/Part name']}"
         )
+        st.markdown('</div>', unsafe_allow_html=True)
         
         selected_row = filtered_df.loc[selected_record_idx]
-        ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
+        ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
         
         # 动态生成纯净的事实清单（列名: 内容）
         raw_facts_list = []
@@ -620,21 +629,22 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
 ==================== [Raw Master List Facts] ====================
 {raw_facts_block}"""
 
-        # 步骤 2：复制 Prompt 并发给 Teams M-PU Bot
-        st.markdown("---")
-        st.markdown("### 2️⃣ 步骤二：复制专属 Prompt 并发给 Teams M-PU ChatGPT Bot")
+        # ==================== STEP 2 ====================
+        st.markdown('<div class="bds-card">', unsafe_allow_html=True)
+        st.markdown('<span class="bds-step-badge">STEP 2</span> <h4 style="display:inline; margin-left:8px; color:#005691;">一键复制 Prompt 并在 Teams M-PU Bot 润色</h4>', unsafe_allow_html=True)
         
         c_p, c_b = st.columns([3, 1])
         with c_p:
-            st.text_area("📋 已完整内嵌 3 列表格原型的工程 Prompt (可一键复制):", prompt_content, height=240)
+            st.text_area("📋 已内嵌 3 列表格原型的完整工程 Prompt (点击右上角图标复制):", prompt_content, height=220)
         with c_b:
             st.markdown("<br>", unsafe_allow_html=True)
             st.link_button("🚀 一键直达 Teams M-PU Bot", TEAMS_BOT_URL, use_container_width=True)
-            st.caption("💡 复制左侧带有完整表格的 Prompt，在 Teams Bot 中发送获取润色结果。")
+            st.caption("💡 操作提示：复制左侧带有 3 列表格的完整 Prompt，在 Teams 窗口中发送给 Bot。")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        # 步骤 3：粘贴 Bot 输出并一键生成
-        st.markdown("---")
-        st.markdown("### 3️⃣ 步骤三：粘贴 M-PU Bot 输出文本并生成交付件")
+        # ==================== STEP 3 ====================
+        st.markdown('<div class="bds-card">', unsafe_allow_html=True)
+        st.markdown('<span class="bds-step-badge">STEP 3</span> <h4 style="display:inline; margin-left:8px; color:#005691;">粘贴 Bot 回复并一键生成最终交付包</h4>', unsafe_allow_html=True)
         
         col_in, col_sup = st.columns([3, 2])
         with col_in:
@@ -652,15 +662,15 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
             if to_emails_str:
                 st.info(f"📧 **自动收件人:**\n`{to_emails_str}`")
 
-        if st.button("🚀 立即安全生成 Word 报告与 Outlook 邮件草稿", type="primary", use_container_width=True):
+        if st.button("🚀 立即生成标准化 Word 报告与 Outlook 邮件草稿", type="primary", use_container_width=True):
             if template_file is None:
                 st.error("❌ 未检测到 Word 模板，请在侧边栏确认路径。")
             else:
-                with st.spinner("正在定向装配 3 列表格、清除占位词并嵌入图片..."):
+                with st.spinner("正在定向装配 3 列表格、插入不良图片并生成邮件附件..."):
                     bot_data = parse_bot_feber_response(bot_reply) if bot_reply.strip() else {}
                     
-                    # 定向装配 Word 模板
-                    doc = populate_docx_exact_tables(template_file, bot_data, selected_row, ok_img, ng_img)
+                    # 定向装配 Word 模板 (自动插入 NG 图片)
+                    doc = populate_docx_exact_tables(template_file, bot_data, selected_row, ng_img)
                     bio = io.BytesIO()
                     doc.save(bio)
                     doc_bytes = bio.getvalue()
@@ -669,7 +679,7 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
                     doc_filename = f"LL_Template_{serial_str}.docx"
                     eml_bytes = generate_eml_file(selected_row, to_emails_str, doc_bytes, doc_filename)
                     
-                    st.success("🎉 生成成功！0. Abstract 已整齐对齐，2. Problem 与不良图片已正常写入，3. Lessons 3列表格与 4 项评估已精准回填。")
+                    st.success("🎉 生成成功！Abstract 已对齐，2. Problem 与不良图片已正常写入，3. Lessons 3列表格与 4 项评估已精准回填。")
                     
                     c_d1, c_d2 = st.columns(2)
                     with c_d1:
@@ -688,6 +698,7 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
                             mime="message/rfc822",
                             use_container_width=True
                         )
+        st.markdown('</div>', unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"❌ 运行异常: {e}")
