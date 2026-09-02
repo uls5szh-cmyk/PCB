@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (Exact Table & Picture Match Edition)
-- Automatic Extraction from Excel 'Picture' / 'NG Picture' Column
-- Direct Injection into Word Table Cell containing 'Picture' (Case-Insensitive)
-- 1:1 Mirror Prompt with 3-Column Tables & Dynamic Row Expansion
-- Recipient-Ready Outlook EML Draft Generation with Word Attachment
+BOSCH | PCB Lesson Learn Quality Studio (Standard FEBER Edition)
+- Original High-Precision Excel Image Extractor (Row.name Indexing)
+- 1:1 Mirror Prompt with Full 3-Column Tables for Teams M-PU Bot
+- Multi-Row Dynamic Lessons Table & 4-Row Potentially Affected Population
+- Auto Picture Insertion in Picture/Defect Cells & Recipient-Ready EML Draft
 =============================================================================
 """
 
@@ -92,7 +92,7 @@ st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
         <h2 style="color: #005691; margin: 0; font-weight: 700;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.95rem; margin: 4px 0 0 0;">FEBER 质量报告规范 · Picture 单元格图片自动注入 · 3列表格动态增行 · 邮件草稿一键闭环</p>
+        <p style="color: #525F6B; font-size: 0.95rem; margin: 4px 0 0 0;">FEBER 质量报告规范 · 原始数据无损提取 ➔ M-PU Bot 润色 ➔ 模板图文精准注入 ➔ 邮件一键闭环</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -124,7 +124,7 @@ else:
     if up_template: template_file = up_template
 
 # -----------------------------------------------------------------------------
-# 3. 辅助解析函数（高可靠性 Picture 提取）
+# 3. 辅助解析函数（采用原版精准提取逻辑）
 # -----------------------------------------------------------------------------
 
 def load_supplier_emails(file_source):
@@ -159,58 +159,43 @@ def load_supplier_emails(file_source):
         pass
     return {}
 
-def get_picture_for_row_robust(file_source, sheet_name, header_idx, target_df_loc):
-    """
-    【高可靠性图片提取】
-    - 自动检索包含 'picture' 的列；
-    - 结合行号容差匹配最靠近该数据行的图片。
-    """
+def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
+    """【原版稳定逻辑】从 Excel 指定行提取 NG 和 OK 图片二进制流"""
+    import openpyxl
     try:
         if hasattr(file_source, 'seek'): file_source.seek(0)
         wb = openpyxl.load_workbook(file_source, data_only=True)
-        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
+        ws = wb[sheet_name]
         
-        # 寻找 Picture 列
-        col_pic = -1
+        col_ng = -1
+        col_ok = -1
         for col_idx in range(1, ws.max_column + 1):
-            for check_r in range(1, header_idx + 3):
-                val = ws.cell(row=check_r, column=col_idx).value
-                if val and 'picture' in str(val).strip().lower():
-                    col_pic = col_idx - 1
-                    break
-            if col_pic != -1:
-                break
+            val = ws.cell(row=header_idx + 1, column=col_idx).value
+            if val:
+                val_str = str(val).strip()
+                if 'NG Picture' in val_str or 'Picture' in val_str: col_ng = col_idx - 1
+                if 'OK Picture' in val_str: col_ok = col_idx - 1
                 
-        # 目标 Excel 绝对行号 (0-based)
-        excel_target_row = (header_idx + 1) + target_df_loc
+        excel_target_row = header_idx + 1 + target_row_idx
+        ok_img = None
+        ng_img = None
         
-        candidates = []
         for img in getattr(ws, '_images', []):
-            r = None
-            c = None
-            anchor = getattr(img, 'anchor', None)
-            if hasattr(anchor, '_from'):
-                r = anchor._from.row
-                c = anchor._from.col
-            elif isinstance(anchor, str):
-                from openpyxl.utils.cell import coordinate_to_tuple
-                r_tuple = coordinate_to_tuple(anchor)
-                r, c = r_tuple[0] - 1, r_tuple[1] - 1
+            try:
+                r = img.anchor._from.row
+                c = img.anchor._from.col
+                if r == excel_target_row:
+                    if c == col_ng or (col_ng != -1 and abs(c - col_ng) <= 1):
+                        ng_img = img._data()
+                    elif c == col_ok:
+                        ok_img = img._data()
+            except Exception:
+                pass
                 
-            if r is not None:
-                diff = abs(r - excel_target_row)
-                candidates.append((diff, img))
-                if diff <= 2 and (col_pic == -1 or (c is not None and abs(c - col_pic) <= 3)):
-                    return img._data()
-                    
-        # 兜底：若有候选图片，返回行距最近的
-        if candidates:
-            candidates.sort(key=lambda x: x[0])
-            if candidates[0][0] <= 5:
-                return candidates[0][1]._data()
+        return ok_img, ng_img
     except Exception as e:
         print(f"图片提取异常: {e}")
-    return None
+        return None, None
 
 def load_excel_robust(file_source):
     """加载 Excel 并定位表头"""
@@ -320,7 +305,7 @@ def parse_bot_feber_response(bot_text):
     return parsed
 
 # -----------------------------------------------------------------------------
-# 5. 精准装配 Word 模板核心函数 (直接命中 Picture 单元格)
+# 5. 精准装配 Word 模板核心函数 (100% 对应单元格与段落)
 # -----------------------------------------------------------------------------
 
 def set_cell_formatted_text(cell, text):
@@ -388,11 +373,11 @@ def insert_content_under_heading(doc, heading_kw, text_value):
             r.font.bold = False
             return
 
-def populate_docx_exact_tables(template_source, bot_data, raw_row, picture_img=None):
+def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
     """
-    【表格与图文定向精准装配引擎】
+    【表格定向精准装配引擎】
     - 0. Abstract -> 对齐分离回填 Issue / Problem / Lessons
-    - Picture 单元格 -> 识别包含 'picture' 的单元格并居中置入图片
+    - Picture 单元格 -> 识别包含 'picture' / 'defect' / 'not-ok-part' 的单元格并居中置入不良图片
     - 1. Product/Process -> 分离回填 Product/Process / Component / Sub-Component
     - 2. Problem -> 精准注入正文段落
     - 3. Lessons -> 3列表格 (Lessons | Measures & Sustainable Solutions | Root Cause) 逐行动态增行
@@ -440,17 +425,23 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, picture_img=N
     for table in doc.tables:
         t_header = "".join(cell.text for cell in table.rows[0].cells).lower()
         
-        # A. 扫描任意表格中包含 'picture' 的单元格并置入图片
+        # A. 扫描任意表格中带有 'picture' / 'defect' / 'not-ok' 的单元格并置入不良图片
         for row in table.rows:
             for cell in row.cells:
                 c_txt = cell.text.lower().replace(" ", "")
-                if "picture" in c_txt:
-                    if picture_img:
+                if "picture" in c_txt or "defect" in c_txt or "not-ok" in c_txt:
+                    if ng_img:
                         cell.text = ""
                         p = cell.paragraphs[0]
                         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        p.add_run().add_picture(io.BytesIO(picture_img), width=Inches(3.0))
+                        p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.8))
                         picture_inserted = True
+                elif "ok-part" in c_txt:
+                    if ok_img:
+                        cell.text = ""
+                        p = cell.paragraphs[0]
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        p.add_run().add_picture(io.BytesIO(ok_img), width=Inches(2.8))
 
         # B. 锁定 3. Lessons (3列对策表：Lessons | Measures & Sustainable Solutions | Root Cause)
         if "lessons" in t_header and ("measures" in t_header or "root cause" in t_header):
@@ -484,13 +475,13 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, picture_img=N
                     set_cell_formatted_text(row.cells[1], w_map[r_i])
 
     # 兜底：如果表格里没找到，检查正文段落
-    if not picture_inserted and picture_img:
+    if not picture_inserted and ng_img:
         for p in doc.paragraphs:
             p_txt_clean = p.text.lower().replace(" ", "")
             if "picture" in p_txt_clean and len(p_txt_clean) < 40:
                 p.text = ""
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p.add_run().add_picture(io.BytesIO(picture_img), width=Inches(3.0))
+                p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.8))
                 break
 
     return doc
@@ -578,14 +569,13 @@ if excel_file is not None and template_file is not None:
         )
         
         selected_row = filtered_df.loc[selected_record_idx]
-        target_df_loc = filtered_df.index.get_loc(selected_record_idx)
         
-        # 从 Excel 提取 Picture 列图片
-        picture_img = get_picture_for_row_robust(excel_file, sheet_name, header_idx, target_df_loc)
+        # 【关键修复】：直接使用该行在原始表格中的相对位置或索引提取图片
+        ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_row.name)
         
-        if picture_img:
-            st.info("✅ 已成功从 Excel 的 Picture 列提取到不良图片！")
-            st.image(picture_img, caption="提取到的 Picture 预览", width=220)
+        if ng_img:
+            st.info("✅ 已成功从 Excel 提取到不良图片！")
+            st.image(ng_img, caption="提取到的 Picture 预览", width=220)
         else:
             st.warning("⚠️ 未在当前行的 Picture 列中检测到图片，生成时图片位置将保持空白。")
             
@@ -692,8 +682,8 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
                 with st.spinner("正在定向装配表格、插入 Picture 图片并生成邮件附件..."):
                     bot_data = parse_bot_feber_response(bot_reply) if bot_reply.strip() else {}
                     
-                    # 定向装配 Word 模板
-                    doc = populate_docx_exact_tables(template_file, bot_data, selected_row, picture_img)
+                    # 定向装配 Word 模板 (自动置入当前选中的 ng_img 和 ok_img)
+                    doc = populate_docx_exact_tables(template_file, bot_data, selected_row, ok_img, ng_img)
                     bio = io.BytesIO()
                     doc.save(bio)
                     doc_bytes = bio.getvalue()
