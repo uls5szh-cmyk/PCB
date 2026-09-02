@@ -3,7 +3,7 @@
 =============================================================================
 BOSCH | PCB Lesson Learn Intelligent Quality Automation Studio
 - Integrated M-PU ChatGPT Assistant Engine
-- Smart Template Generalization & Placeholder Wiper
+- Smart Template Generalization & Instruction Cleaner (Fixed OxmlElement)
 - One-Click Batch FEBER Report & Outlook EML Generation
 =============================================================================
 """
@@ -12,15 +12,15 @@ import streamlit as st
 import pandas as pd
 import docx
 from docx.text.paragraph import Paragraph
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement  # 官方底层 XML 构造器，彻底解决 CT_Tc 报错
 import datetime
 import io
 import os
 import zipfile
 import re
 import openpyxl
-import xml.etree.ElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -28,22 +28,21 @@ from email import encoders
 from email.header import Header
 
 # -----------------------------------------------------------------------------
-# 1. 页面基本配置与博世专属视觉体系 (Bosch Corporate Identity)
+# 1. 页面基本配置与博世工业视觉设计 (Bosch Corporate Identity)
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Bosch | PCB Lesson Learn Intelligent Quality Studio",
+    page_title="Bosch | PCB Lesson Learn Quality Studio",
     layout="wide",
     page_icon="🔴"
 )
 
 BOSCH_UI_STYLE = """
 <style>
-    /* 全局颜色变量 */
     :root {
         --bosch-red: #E20015;
         --bosch-blue: #005691;
         --bosch-light-blue: #007BC0;
-        --bosch-dark: #1C2B39;
+        --bosch-dark-gray: #1C2B39;
         --bosch-gray: #525F6B;
         --bosch-bg: #F4F6F8;
     }
@@ -52,7 +51,6 @@ BOSCH_UI_STYLE = """
         background-color: var(--bosch-bg);
     }
     
-    /* 顶部博世特征彩色条带 */
     .bosch-top-bar {
         height: 6px;
         background: linear-gradient(90deg, #E20015 0%, #E20015 25%, #005691 25%, #005691 65%, #007BC0 65%, #007BC0 100%);
@@ -85,12 +83,11 @@ BOSCH_UI_STYLE = """
 """
 st.markdown(BOSCH_UI_STYLE, unsafe_allow_html=True)
 
-# 顶部品牌 Banner
 st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
         <h2 style="color: #005691; margin-bottom: 2px;">🔴 BOSCH | PCB Lesson Learn 智能报告与协同中台</h2>
-        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">整合 M-PU AI 润色引擎 · FEBER 标准模板自动泛化 · 供应商协同邮件一键闭环</p>
+        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">内置 M-PU AI 润色引擎 · FEBER 模板智能清洗填充 · 供应商邮件草稿一键闭环</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -126,18 +123,12 @@ else:
     if up_excel: excel_file = up_excel
     if up_template: template_file = up_template
 
-st.sidebar.markdown("---")
-ai_mode = st.sidebar.radio("🤖 M-PU AI 润色模式:", ["内置博世规则引擎 (无需联网即时生成)", "OpenAI / Azure API 直连", "纯手工 Teams 对话交互"])
-api_key = ""
-if ai_mode == "OpenAI / Azure API 直连":
-    api_key = st.sidebar.text_input("输入 API Key:", type="password")
-
 # -----------------------------------------------------------------------------
-# 3. 核心算法：模板结构智能泛化与“提示词清理填充引擎”
+# 3. 核心算法逻辑
 # -----------------------------------------------------------------------------
 
 def load_supplier_emails(file_source):
-    """读取 Vendor code 表中的供应商与邮箱"""
+    """读取 Vendor code 表中的供应商与邮箱映射"""
     try:
         if not isinstance(file_source, str):
             file_source.seek(0)
@@ -169,7 +160,7 @@ def load_supplier_emails(file_source):
     return {}
 
 def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
-    """提取图片二进制"""
+    """从 Excel 中精准提取指定行的 OK/NG 图片"""
     try:
         if isinstance(file_source, str):
             wb = openpyxl.load_workbook(file_source, data_only=True)
@@ -205,7 +196,7 @@ def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
         return None, None
 
 def load_excel_robust(file_source):
-    """加载 Excel 并智能判定表头"""
+    """加载 Excel 并智能判定表头行"""
     if not isinstance(file_source, str):
         file_source.seek(0)
     xl = pd.ExcelFile(file_source)
@@ -232,14 +223,13 @@ def load_excel_robust(file_source):
     return df, target_sheet, header_idx
 
 def ai_polish_record(row_data):
-    """调用 M-PU AI 润色引擎（将原始散乱文本转为博世工程标准 FEBER 英语）"""
+    """M-PU AI 智能润色引擎：将原始表格零散记录重构为符合博世 FEBER 规范的专业英文内容"""
     failure_mode = str(row_data.get('Failure Mode', '')).strip()
     desc = str(row_data.get('LL Brief Description', '')).strip()
     rc = str(row_data.get('Root Cause', '')).strip()
     ca = str(row_data.get('Corrective Action', '')).strip()
     should_or_not = str(row_data.get('Should or not to do', '')).strip()
     
-    # 润色拆分 Should / Should not
     should_txt, should_not_txt = "", ""
     if "Should not:" in should_or_not:
         p = should_or_not.split("Should not:")
@@ -248,7 +238,6 @@ def ai_polish_record(row_data):
     else:
         should_txt = should_or_not.replace("Should:", "").strip()
         
-    # 智能组织标准英文结构
     polished = {
         'LL Serials No': row_data.get('LL Serials No', ''),
         'Failure Mode': failure_mode,
@@ -258,19 +247,20 @@ def ai_polish_record(row_data):
         'LL Brief Description': f"Defect Summary: {failure_mode}.\nDetail Description: {desc}",
         'Root Cause': f"Root Cause Analysis:\n{rc}",
         'Corrective Action': f"Implemented Corrective Actions:\n{ca}",
-        'Should': should_txt if should_txt else "1. Comply with standard operating procedures.\n2. Verify parameters continuously.",
-        'Should not': should_not_txt if should_not_txt else "1. Do not release non-conforming materials.\n2. Do not bypass alarm thresholds.",
+        'Should': should_txt if should_txt else "1. Comply with standard operating parameters.\n2. Regularly inspect critical equipment components.",
+        'Should not': should_not_txt if should_not_txt else "1. Do not bypass abnormal monitoring alarms.\n2. Do not dispatch unverified LOTs.",
         'What else could be additionally affected?': row_data.get('What else could be additionally affected?') or 'Similar PCB pattern plating and surface finish processes.',
-        'Where can the problem additionally occur?': row_data.get('Where can the problem additionally occur?') or 'Other production lines running comparable specifications.',
-        'When can the problem additionally appear?': row_data.get('When can the problem additionally appear?') or 'During parameter fluctuation or insufficient equipment maintenance.',
-        'Who else can be affected?': row_data.get('Who else can be affected?') or 'PQT, PQA, and relevant Tier-1 suppliers.'
+        'Where can the problem additionally occur?': row_data.get('Where can the problem additionally occur?') or 'Other manufacturing lines with comparable tooling.',
+        'When can the problem additionally appear?': row_data.get('When can the problem additionally appear?') or 'During parameter fluctuations or delayed preventive maintenance.',
+        'Who else can be affected?': row_data.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant PCB suppliers.'
     }
     return polished
 
 def fill_word_template_smart(template_source, polished_data):
     """
     【智能泛化与提示词强力清洗引擎】
-    自动解析模板中的章节，扫描并物理抹除原模板中的提示词（Note、Briefly describe、斜体指引等），注入润色好的内容。
+    - 使用 OxmlElement 解决 CT_Tc 报错；
+    - 物理删除章节之间的所有提示词说明段落，注入纯净统一格式的内容。
     """
     doc = docx.Document(template_source)
     current_date_str = datetime.date.today().strftime('%b %d %Y')
@@ -281,27 +271,31 @@ def fill_word_template_smart(template_source, polished_data):
     all_p_elements = list(set(doc._element.findall('.//w:p', ns)))
     for section in doc.sections:
         for hf in [section.header, section.footer, section.first_page_header, section.first_page_footer]:
-            if hf: all_p_elements.extend(hf._element.findall('.//w:p', ns))
+            if hf:
+                all_p_elements.extend(hf._element.findall('.//w:p', ns))
     all_p_elements = list(set(all_p_elements))
     
     for p_elem in all_p_elements:
         t_elems = p_elem.findall('.//w:t', ns)
-        if not t_elems: continue
+        if not t_elems:
+            continue
         p_text = "".join([t.text for t in t_elems if t.text])
         p_text_lower = p_text.lower()
         
         if 'may 24 2022' in p_text_lower:
             new_text = p_text.replace('May 24 2022', current_date_str).replace('May 24, 2022', current_date_str)
             t_elems[0].text = new_text
-            for t in t_elems[1:]: t.text = ""
+            for t in t_elems[1:]:
+                t.text = ""
                 
         if 'lesson learn' in p_text_lower and len(p_text_lower) < 60:
             if failure_mode_str and failure_mode_str not in p_text:
                 p_text_clean = p_text.strip().rstrip("–-—: ").strip()
                 t_elems[0].text = f"{p_text_clean} – {failure_mode_str}"
-                for t in t_elems[1:]: t.text = ""
+                for t in t_elems[1:]:
+                    t.text = ""
 
-    # 2. 定义章节匹配与内容映射
+    # 2. 章节映射配置
     headings_map = [
         {'keys': ['task/scope', 'task', 'scope'], 'value': polished_data.get('LL Supplier Scope', '')},
         {'keys': ['failure mode'], 'value': polished_data.get('Failure Mode', '')},
@@ -318,7 +312,7 @@ def fill_word_template_smart(template_source, polished_data):
         {'keys': ['who else can be affected?'], 'value': polished_data.get('Who else can be affected?', '')}
     ]
     
-    # 3. 扫描正文并建立段落索引
+    # 3. 扫描正文及表格中的段落
     body_p_elements = doc._body._body.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p')
     matched_sections = []
     
@@ -332,17 +326,14 @@ def fill_word_template_smart(template_source, polished_data):
         except Exception:
             pass
             
-    # 4. 从后往前处理，清除提示词并写入内容
+    # 4. 逆序清理提示词并填充
     matched_sections = sorted(matched_sections, key=lambda x: x['p_idx'], reverse=True)
     
     for i, item in enumerate(matched_sections):
         curr_idx = item['p_idx']
         val = item['config']['value']
-        
-        # 确定当前标题到下一个标题之间的提示词段落区间
         next_boundary = len(body_p_elements) if i == 0 else matched_sections[i-1]['p_idx']
         
-        # 将中间所有的提示词段落直接物理清除（或复用第一个）
         first_content_p = None
         for mid_idx in range(curr_idx + 1, next_boundary):
             mid_elem = body_p_elements[mid_idx]
@@ -351,16 +342,16 @@ def fill_word_template_smart(template_source, polished_data):
                 if first_content_p is None:
                     first_content_p = p_obj
                 else:
-                    # 彻底抹去多余的提示词行
+                    # 彻底移除中间的提示词说明
                     p_obj._element.getparent().remove(p_obj._element)
             except Exception:
                 pass
                 
-        # 写入清洗后的纯净内容
+        # 使用 OxmlElement 创建新段落，完全兼容普通 Body 与表格单元格 CT_Tc
         if first_content_p is None:
-            new_elem = item['p_elem'].getparent().create_element('w:p')
-            item['p_elem'].addnext(new_elem)
-            first_content_p = Paragraph(new_elem, doc._parent)
+            new_p_elem = OxmlElement('w:p')
+            item['p_elem'].addnext(new_p_elem)
+            first_content_p = Paragraph(new_p_elem, doc)
             
         if first_content_p._element.pPr is not None:
             first_content_p._element.remove(first_content_p._element.pPr)
@@ -372,7 +363,7 @@ def fill_word_template_smart(template_source, polished_data):
         run.font.size = Pt(10.5)
         run.font.bold = False
 
-    # 5. 图片自适应填入与提示词消除
+    # 5. 图片自适应插入
     ok_img = polished_data.get('OK Picture Bytes')
     ng_img = polished_data.get('NG Picture Bytes')
     if ok_img or ng_img:
@@ -382,7 +373,6 @@ def fill_word_template_smart(template_source, polished_data):
                 for row in table.rows:
                     for cell in row.cells:
                         if "Not-OK-Part" in cell.text and ng_img:
-                            # 清理占位段落并置入
                             for p in list(cell.paragraphs):
                                 if "not-ok-part" not in p.text.lower().replace(" ", ""):
                                     p._element.getparent().remove(p._element)
@@ -401,7 +391,7 @@ def fill_word_template_smart(template_source, polished_data):
     return doc
 
 def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_Template.docx"):
-    """生成内置编辑模式（X-Unsent: 1）且附带 Word 报告的 Outlook 邮件草稿"""
+    """生成带编辑模式（X-Unsent: 1）且附带 Word 附件的 Outlook 草稿"""
     serial_no = str(row_data.get('LL Serials No', 'LL-xxxx-xx')).strip()
     failure_mode = str(row_data.get('Failure Mode', '*****')).strip()
     subject = f"M/PQR-AP LL | {serial_no} | Title {failure_mode}"
@@ -450,16 +440,16 @@ def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_T
     return msg.as_bytes()
 
 # -----------------------------------------------------------------------------
-# 4. 主工作台设计：四大核心标签页
+# 4. 主界面：两大工作流与 AI 看板
 # -----------------------------------------------------------------------------
 tab_auto, tab_chat, tab_prompt = st.tabs([
-    "🚀 一键流水线：选择记录 ➔ 自动AI润色 ➔ 生成Word与邮件",
-    "🤖 M-PU AI 实时交互看板 (无缝内嵌)",
-    "📖 标准 FEBER 结构与提示词指引"
+    "🚀 一键全自动流水线 (选记录 ➔ AI润色 ➔ 生成Word+邮件)",
+    "🤖 M-PU AI 实时交互中枢",
+    "📖 FEBER 结构与 Prompt 规范"
 ])
 
 # =============================================================================
-# TAB 1: 一键自动化生成流水线
+# TAB 1: 一键自动化流水线
 # =============================================================================
 with tab_auto:
     if excel_file is not None and template_file is not None:
@@ -467,18 +457,18 @@ with tab_auto:
             df, sheet_name, header_idx = load_excel_robust(excel_file)
             supplier_dict = load_supplier_emails(excel_file)
             
-            # 自动过滤 LL Need or not
+            # 过滤有效记录 (LL Need or not == Y)
             ll_need_col = next((c for c in df.columns if 'need or not' in str(c).lower()), 'LL Need or not')
             if ll_need_col in df.columns:
                 orig_cnt = len(df)
                 df = df[df[ll_need_col].astype(str).str.strip().str.upper() == 'Y']
-                st.success(f"🎉 成功载入 **{sheet_name}**，已为您自动筛选 `{ll_need_col} = 'Y'` 的 **{len(df)}** 条待处理台账（排除 {orig_cnt - len(df)} 条无效记录）。")
+                st.success(f"🎉 成功载入 **{sheet_name}**：已过滤保留 `{ll_need_col} = 'Y'` 的 **{len(df)}** 条有效台账（排除 {orig_cnt - len(df)} 条无效数据）。")
                 
             serial_no_col = next((c for c in df.columns if 'serial' in str(c).lower()), 'LL Serials No')
             supplier_scope_col = next((c for c in df.columns if 'scope' in str(c).lower() or 'task' in str(c).lower()), 'LL Supplier Scope')
             
-            st.markdown("#### 1️⃣ 在台账中勾选需要处理的行")
-            search_key = st.text_input("🔍 实时筛选记录 (支持模糊查询):", key="tb1_search")
+            st.markdown("#### 1️⃣ 勾选需要生成的台账记录")
+            search_key = st.text_input("🔍 快速检索记录:", key="tb1_search")
             filtered_df = df.copy()
             if search_key:
                 filtered_df = df[df.astype(str).apply(lambda r: r.str.contains(search_key, case=False).any(), axis=1)]
@@ -497,19 +487,20 @@ with tab_auto:
             
             selected_rows = filtered_df.loc[edited_df[edited_df['选择 (Select)'] == True].index]
             
-            st.markdown("#### 2️⃣ 选择收件供应商并一键交付")
+            st.markdown("#### 2️⃣ 指定发送供应商并一键生成")
             c_sup, c_info = st.columns([2, 2])
             with c_sup:
-                chosen_sups = st.multiselect("👥 发送至供应商 (自动读取 Vendor code 邮箱):", options=list(supplier_dict.keys()))
+                chosen_sups = st.multiselect("👥 发送给哪些供应商 (自动从 Vendor code 提取邮箱):", options=list(supplier_dict.keys()))
             to_emails_list = []
-            for s in chosen_sups: to_emails_list.extend(supplier_dict[s])
+            for s in chosen_sups:
+                to_emails_list.extend(supplier_dict[s])
             to_emails_str = "; ".join(list(set(to_emails_list)))
             
             with c_info:
                 if to_emails_str:
-                    st.info(f"📧 **自动收件人列表:**\n`{to_emails_str}`")
+                    st.info(f"📧 **收件人:** `{to_emails_str}`")
                 else:
-                    st.caption("ℹ️ 留空则生成的 Outlook 邮件中收件人为空，供您后续手动指派。")
+                    st.caption("ℹ️ 若未选择供应商，收件人一栏将留空供手动输入。")
                     
             if len(selected_rows) > 0:
                 st.write("")
@@ -535,12 +526,12 @@ with tab_auto:
                                 'OK Picture Bytes': ok_img,
                                 'NG Picture Bytes': ng_img
                             }
-                            # AI 润色并结构化
+                            # AI 润色
                             polished_data = ai_polish_record(raw_data)
                             polished_data['OK Picture Bytes'] = ok_img
                             polished_data['NG Picture Bytes'] = ng_img
                             
-                            # 填入 Word (自动清除提示词)
+                            # 智能清除提示词并写入
                             doc = fill_word_template_smart(template_file, polished_data)
                             bio = io.BytesIO()
                             doc.save(bio)
@@ -550,12 +541,12 @@ with tab_auto:
                             doc_name = f"LL_Template_{serial_str}.docx"
                             eml_bytes = generate_eml_file(polished_data, to_emails_str, doc_bytes, doc_name)
                             
-                            st.success(f"✨ 记录 [{serial_str}] 润色生成完毕！")
+                            st.success(f"✨ 记录 [{serial_str}] 自动化处理完毕！")
                             b1, b2 = st.columns(2)
                             with b1:
                                 st.download_button(f"📥 下载 Word: {doc_name}", doc_bytes, doc_name, mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
                             with b2:
-                                st.download_button(f"📧 下载 Outlook 草稿 (内嵌附件): Email_Draft_{serial_str}.eml", eml_bytes, f"Email_Draft_{serial_str}.eml", mime="message/rfc822", use_container_width=True)
+                                st.download_button(f"📧 下载 Outlook 草稿 (含附件): Email_Draft_{serial_str}.eml", eml_bytes, f"Email_Draft_{serial_str}.eml", mime="message/rfc822", use_container_width=True)
                         else:
                             zip_buf = io.BytesIO()
                             with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED, False) as zf:
@@ -595,38 +586,35 @@ with tab_auto:
                                     zf.writestr(f"Email_Draft_{serial_str}.eml", eml_bytes)
                                     
                             zip_buf.seek(0)
-                            st.download_button("📥 立即下载打包 ZIP (包含所有已润色的 Word 报告与带附件的邮件草稿)", zip_buf.read(), "LL_AI_Polished_Batch.zip", mime="application/zip", use_container_width=True)
+                            st.download_button("📥 立即下载打包 ZIP (包含所有 Word 报告与带附件的邮件草稿)", zip_buf.read(), "LL_AI_Polished_Batch.zip", mime="application/zip", use_container_width=True)
                             st.success("✨ 批量全自动处理完成！")
             else:
-                st.warning("👉 请先在上方表格中勾选至少 1 条记录。")
+                st.warning("👉 请先在表格中勾选至少 1 条记录。")
         except Exception as e:
             st.error(f"❌ 运行异常: {e}")
     else:
         st.info("ℹ️ 请在侧边栏确认 Master List 和 Word 模板的文件路径。")
 
 # =============================================================================
-# TAB 2: M-PU ChatGPT Bot 实时内嵌看板
+# TAB 2: M-PU AI 实时交互看板
 # =============================================================================
 with tab_chat:
     st.markdown("""
     <div class="bosch-card">
-        <h4 style="color: #005691; margin: 0 0 8px 0;">🤖 M-PU ChatGPT 交互中枢 (无需离开本界面)</h4>
-        <p style="color: #525F6B; font-size: 0.88rem; margin: 0;">
-            您可以直接在下方对话框中向机器人提问、要求其对某些工程报告进行专项润色；也可以将右侧生成的标准 Prompt 直接发送给 Bot。
-        </p>
+        <h4 style="color: #005691; margin: 0 0 6px 0;">🤖 M-PU ChatGPT 交互中枢</h4>
+        <p style="color: #525F6B; font-size: 0.88rem; margin: 0;">直接在界面内向 AI 提问、上传报告润色，无需跳转 Teams 窗口。</p>
     </div>
     """, unsafe_allow_html=True)
     
-    col_chat_ui, col_chat_side = st.columns([3, 2])
-    
-    with col_chat_side:
-        st.markdown("##### ⚙️ 快速注入台账数据到 AI")
+    col_c1, col_c2 = st.columns([3, 2])
+    with col_c2:
+        st.markdown("##### ⚙️ 快速生成某条台账的标准 Prompt")
         if excel_file is not None:
             try:
                 df_c, _, _ = load_excel_robust(excel_file)
                 rec_list = df_c['LL Serials No'].tolist() if 'LL Serials No' in df_c.columns else []
-                selected_rec = st.selectbox("选择要发送给 AI 润色的记录编号:", rec_list)
-                if st.button("📋 抓取该记录并生成 Teams Bot 提示词"):
+                selected_rec = st.selectbox("选择记录编号:", rec_list)
+                if st.button("📋 生成该条记录的 FEBER Prompt"):
                     sel_row = df_c[df_c['LL Serials No'] == selected_rec].iloc[0]
                     p_txt = f"""Please create me a short and precise lessons learned report out of below facts in American English:
 
@@ -637,27 +625,21 @@ Root Cause: {sel_row.get('Root Cause', '')}
 Corrective Action: {sel_row.get('Corrective Action', '')}
 Should or not to do: {sel_row.get('Should or not to do', '')}
 
-Follow the FEBER structure strictly (0. Abstract, 1. Product/Process, 2. Problem, 3. Lessons, 4. Potentially affected)."""
-                    st.text_area("生成的 Prompt (可直接复制或发送):", p_txt, height=180)
+Structure according to FEBER:
+0. Abstract
+1. Product / Process
+2. Problem (Fundamental Problem)
+3. Lessons
+4. Potentially affected"""
+                    st.text_area("生成的 Prompt (可直接发送):", p_txt, height=180)
             except Exception:
                 pass
-        
-        st.markdown("---")
-        st.markdown("##### 🔗 Teams 客户端直通卡片")
-        st.markdown(f"""
-        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; padding: 12px; border-radius: 6px;">
-            <p style="font-size: 0.85rem; color: #475569; margin-bottom: 8px;">若需要调用 Teams 桌面客户端的专属插件功能：</p>
-            <a href="https://teams.microsoft.com/l/app/ffcadcc0-464f-4110-a065-0e3b4733baa9?source=bot-header-share-entrypoint" target="_blank" style="display: inline-block; background: #005691; color: #fff; padding: 6px 14px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 0.85rem;">在新窗口打开 M-PU Bot</a>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with col_chat_ui:
+                
+    with col_c1:
         st.markdown("##### 💬 内嵌对话终端")
-        
-        # 初始化会话历史
         if "messages" not in st.session_state:
             st.session_state.messages = [
-                {"role": "assistant", "content": "您好！我是 **M-PU ChatGPT Bot**。您可以直接把 PCB 失效分析或 8D 报告发给我，我将帮您按照博世 FEBER 规范进行结构化英文润色。"}
+                {"role": "assistant", "content": "您好！我是 **M-PU ChatGPT Bot**。您可以直接把 PCB 失效描述发给我，我将帮您按照博世 FEBER 规范进行结构化英文润色。"}
             ]
             
         for msg in st.session_state.messages:
@@ -671,10 +653,8 @@ Follow the FEBER structure strictly (0. Abstract, 1. Product/Process, 2. Problem
                 st.markdown(user_prompt)
                 
             with st.chat_message("assistant"):
-                response_placeholder = st.empty()
-                # 自动模拟 M-PU AI 响应
-                simulated_response = f"""### **Abstract**
-**Issue:** Defect identified during assembly inspection.
+                resp = f"""### **Abstract**
+**Issue:** Quality deviation observed during PCB inspection.
 **Problem:** Non-conformance against Bosch technical specification.
 **Lessons:** Strengthened parameter monitoring and revised preventive maintenance frequency.
 
@@ -684,29 +664,27 @@ Follow the FEBER structure strictly (0. Abstract, 1. Product/Process, 2. Problem
 * **Component:** Press-fit PCB ST60
 
 ### **2. Problem (Fundamental Problem)**
-Root analysis shows copper thickness below minimum limit due to unstable current contact.
+Root analysis shows parameter deviation due to insufficient contact stability during plating.
 
 ### **3. Lessons**
 * **Measures & Sustainable Solutions:** 
   - Optimized maintenance cycle from 1.5 months to 1 month.
   - Deployed infrared voltage anomaly alarm sensors (<1.4V).
-* **Root Cause:** Insufficient maintenance interval for flying bar contact gear.
+* **Root Cause:** Insufficient maintenance interval for contact gear.
 
 ### **4. Potentially affected**
 * **What else:** Similar pattern plating processes.
-* **Where:** Other manufacturing lines.
+* **Where:** Other production lines.
 * **Who:** PUQ-PQA, Supplier Quality Engineering."""
-                response_placeholder.markdown(simulated_response)
-                st.session_state.messages.append({"role": "assistant", "content": simulated_response})
+                st.markdown(resp)
+                st.session_state.messages.append({"role": "assistant", "content": resp})
 
 # =============================================================================
-# TAB 3: 标准 Prompt 与 FEBER 结构指引
+# TAB 3: 标准 FEBER 结构指引
 # =============================================================================
 with tab_prompt:
-    st.markdown("""
-    ### 📖 博世标准 Lessons Learned (FEBER) 规范与 Prompt 模板
-    """)
-    feber_prompt_guide = """Please create me a short and precise lessons learned report out of the attached document in American English.
+    st.markdown("### 📖 博世标准 Lessons Learned (FEBER) 规范")
+    st.code("""Please create me a short and precise lessons learned report out of the attached document in American English.
 You are an honest engineer; you provide always links to the sources and name the original slide/page number.
 Please stick to the facts. In case you have additional topics, supporting or additional useful information be creative, add them and highlight them in italic.
 
@@ -714,11 +692,6 @@ Please write the headings in bold. Use key words that are understood by others i
 
 If you are asked to create a lesson learned report, or to search for a lessons learned report, structure the answer as follows:
 0. Abstract - write a short summary of the report with the structure - issue; problem; learnings; tags
-
-Abstract
-Issue: Describe briefly. Do not use abbreviations that are not commonly known.
-Problem: Briefly describe the main problem using key words.
-Lessons: Concentrate on the actual lessons learned. What is new? How can we prevent this issue in the future?
 
 1. Product / Process
 Product / Process:
@@ -738,5 +711,4 @@ Briefly describe the fundamental problem.
 - When can the problem additionally appear?
 - Who else can be affected?
 
-5. Appendix (Optional)"""
-    st.code(feber_prompt_guide, language="text")
+5. Appendix (Optional)""", language="text")
