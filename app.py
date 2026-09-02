@@ -393,10 +393,10 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
         # C. 锁定 4. Potentially affected (2列 4行表格)
         elif "what else" in t_header or "potentially" in t_header or len(table.rows) == 4:
             w_map = {
-                0: bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Similar PCB pattern plating processes.',
+                0: bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Similar PCB pattern plating and surface finish processes.',
                 1: bot_data.get('Where') or raw_row.get('Where can the problem additionally occur?') or 'Other production lines.',
-                2: bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuation or delayed maintenance.',
-                3: bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant suppliers.'
+                2: bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuation or delayed equipment maintenance.',
+                3: bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant Tier-1 suppliers.'
             }
             for r_i, row in enumerate(table.rows):
                 if len(row.cells) >= 2 and r_i in w_map:
@@ -488,8 +488,146 @@ if excel_file is not None and template_file is not None:
         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
         
         # 构建完整嵌入表格的 FEBER Prompt (1:1 还原截图结构)
+        desc_val = selected_row.get('LL Brief Description', '')
+        fm_val = selected_row.get('Failure Mode', '')
+        should_val = selected_row.get('Should or not to do', '')
+        mat_val = selected_row.get('Related Material Field / Process', '')
+        proj_val = selected_row.get('Project/Part name', '')
+        ca_val = selected_row.get('Corrective Action', '')
+        rc_val = selected_row.get('Root Cause', '')
+        what_else_val = selected_row.get('What else could be additionally affected?', 'Similar PCB pattern plating and surface finish processes.')
+        where_val = selected_row.get('Where can the problem additionally occur?', 'Other production lines.')
+        when_val = selected_row.get('When can the problem additionally appear?', 'During parameter fluctuation or delayed equipment maintenance.')
+        who_val = selected_row.get('Who else can be affected?', 'PUQ-PQA, PQT, and relevant Tier-1 suppliers.')
+
         prompt_content = f"""Please create me a short and precise lessons learned report out of the attached document in American English.
 You are an honest engineer; you provide always links to the sources and name the original slide/page number.
 Please stick to the facts. In case you have additional topics, supporting or additional useful information be creative, add them and highlight them in italic.
 
-Please write the headings in bold. Use key words that a
+Please write the headings in bold. Use key words that are understood by others in Bosch. Describe the report "user-friendly", so others can read it easily. One page for chapter 1-4 is appropriate. Delete all hints in blue letters.
+
+If you are asked to create a lesson learned report, or to search for a lessons learned report, structure the answer as follows:
+0. Abstract - write a short summary of the report with the structure - issue; problem; learnings; tags
+
+Abstract
+Issue: {desc_val}
+Problem: {fm_val}
+Lessons: {should_val}
+
+Picture – Product – Defect
+General Hint:
+• Keep it short. Two pages for chapter 1-4 should be sufficient.
+• Support your content with pictures where appropriate.
+• Use key words that are understood by others in Bosch and not only in your area of expertise.
+
+1. Product / Process
+Product / Process: {mat_val}
+Component: {proj_val}
+Sub-Component: 
+
+2. Problem (Fundamental Problem)
+Note:
+Briefly describe the fundamental problem. Do not use technical root causes (TRC) or managerial root causes (MRC). Use pictures or graphs to visualize the problem. Avoid abbreviations that are specific to the division or product. If abbreviations are used, they must be explained either in the text or in the appendix.
+
+{desc_val}
+
+3. Lessons
+Document your lessons in the table.
+• Describe your actual lessons, such as "What would I suggest my colleagues do differently next time in a similar situation?"
+• Provide a brief description of the cause and effect.
+• Explain what turned out to be new or missing knowledge at that time.
+
+| Lessons | Measures & Sustainable Solutions | Root Cause |
+| :--- | :--- | :--- |
+| {should_val} | {ca_val} | {rc_val} |
+
+4. Potentially affected.
+Determine who else might find this information useful to the best of your knowledge:
+| Aspect | Description |
+| :--- | :--- |
+| What else could be additionally be affected? | {what_else_val} |
+| Where can the problem additionally occur? | {where_val} |
+| When can the problem additionally appear? | {when_val} |
+| Who else can be affected? | {who_val} |
+
+Check if Centers of Competence (CoC) or BEO working groups should be informed: https://connect.bosch.com/communities/community/BEO
+
+5. Appendix (Optional)
+• Refer to this appendix for extra details that provide better insight on the above information, such as existing reports, presentations, or 8D documents.
+• Include reference numbers if available, like those from 8D, IQIS, or Ticket Systems.
+
+BEWARE: This document will be uploaded as a PDF file to the FEBER database. Since FEBER deletes embedded documents upon upload, make sure to include any embedded documents as additional pages"""
+
+        # 步骤 2：复制 Prompt 并发给 Teams M-PU Bot
+        st.markdown("---")
+        st.markdown("### 2️⃣ 步骤二：复制专属 Prompt 并发给 Teams M-PU ChatGPT Bot")
+        
+        c_p, c_b = st.columns([3, 1])
+        with c_p:
+            st.text_area("📋 已内嵌 3 列表格原型的完整工程 Prompt (可一键复制):", prompt_content, height=240)
+        with c_b:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.link_button("🚀 一键直达 Teams M-PU Bot", TEAMS_BOT_URL, use_container_width=True)
+            st.caption("💡 复制左侧带有完整表格的 Prompt，在 Teams Bot 中发送获取润色结果。")
+
+        # 步骤 3：粘贴 Bot 输出并一键生成
+        st.markdown("---")
+        st.markdown("### 3️⃣ 步骤三：粘贴 M-PU Bot 输出文本并生成交付件")
+        
+        col_in, col_sup = st.columns([3, 2])
+        with col_in:
+            bot_reply = st.text_area(
+                "📥 在此粘贴 M-PU Bot 润色后的完整回复：",
+                height=220,
+                placeholder="粘贴 Bot 输出的包含 0. Abstract, 1. Product/Process, 2. Problem, 3. Lessons (包含3列表格), 4. Potentially affected 的完整文本..."
+            )
+        with col_sup:
+            selected_sups = st.multiselect("👥 选择收件供应商 (自动读取 Vendor code 邮箱):", options=list(supplier_dict.keys()))
+            to_emails_list = []
+            for s in selected_sups:
+                to_emails_list.extend(supplier_dict[s])
+            to_emails_str = "; ".join(list(set(to_emails_list)))
+            if to_emails_str:
+                st.info(f"📧 **自动收件人:**\n`{to_emails_str}`")
+
+        if st.button("🚀 立即安全生成 Word 报告与 Outlook 邮件草稿", type="primary", use_container_width=True):
+            if template_file is None:
+                st.error("❌ 未检测到 Word 模板，请在侧边栏确认路径。")
+            else:
+                with st.spinner("正在定向装配 3 列表格、清除占位词并嵌入图片..."):
+                    bot_data = parse_bot_feber_response(bot_reply) if bot_reply.strip() else {}
+                    
+                    # 定向装配 Word 模板
+                    doc = populate_docx_exact_tables(template_file, bot_data, selected_row, ok_img, ng_img)
+                    bio = io.BytesIO()
+                    doc.save(bio)
+                    doc_bytes = bio.getvalue()
+                    
+                    serial_str = str(selected_row.get(serial_no_col, 'LL-Export'))
+                    doc_filename = f"LL_Template_{serial_str}.docx"
+                    eml_bytes = generate_eml_file(selected_row, to_emails_str, doc_bytes, doc_filename)
+                    
+                    st.success("🎉 生成成功！3. Lessons 3列表格与 4 项评估表格已精准回填，图片已自动嵌入。")
+                    
+                    c_d1, c_d2 = st.columns(2)
+                    with c_d1:
+                        st.download_button(
+                            f"📥 下载 Word 报告: {doc_filename}",
+                            doc_bytes,
+                            doc_filename,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
+                    with c_d2:
+                        st.download_button(
+                            f"📧 下载 Outlook 草稿 (已带Word附件): Email_Draft_{serial_str}.eml",
+                            eml_bytes,
+                            f"Email_Draft_{serial_str}.eml",
+                            mime="message/rfc822",
+                            use_container_width=True
+                        )
+
+    except Exception as e:
+        st.error(f"❌ 运行异常: {e}")
+else:
+    st.info("ℹ️ 请在侧边栏确认 Master List (Excel) 和 Word 模板的文件路径。")
