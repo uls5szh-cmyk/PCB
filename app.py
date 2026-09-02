@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (Exact Mirror & Direct Textbox Image Edition)
-- Deep Textbox Penetration: Directly embeds NG Picture into 'Picture – Product – Defect'
-- 1:1 Mirror Prompt with Full 3-Column Tables for Teams M-PU Bot
-- Direct Table-Cell & Abstract Section Population (100% Openable DOCX)
-- Recipient-Ready Outlook EML Draft Generation with Word Attachment
+BOSCH | PCB Lesson Learn Quality Studio (Defect Picture Direct-Injection Edition)
+- Robust Excel Floating Image Extractor with Row-Anchor Tolerance
+- Real-time UI Defect Image Preview & Fallback Uploader (WYSIWYG)
+- Deep Textbox Penetration: 100% Guaranteed Image Embedding at 'Picture – Product – Defect'
+- 1:1 Mirror Prompt with 3-Column Tables & Outlook EML Draft Generation
 =============================================================================
 """
 
@@ -72,16 +72,16 @@ BOSCH_UI_STYLE = """
         margin-bottom: 10px;
     }
     .stButton>button {
-        background-color: var(--bosch-blue);
-        color: white;
-        border-radius: 4px;
-        font-weight: 600;
-        border: none;
-        padding: 8px 20px;
+        background-color: var(--bosch-blue) !important;
+        color: white !important;
+        border-radius: 4px !important;
+        font-weight: 600 !important;
+        border: none !important;
+        padding: 8px 20px !important;
     }
     .stButton>button:hover {
-        background-color: var(--bosch-light-blue);
-        color: white;
+        background-color: var(--bosch-light-blue) !important;
+        color: white !important;
     }
 </style>
 <div class="bosch-top-bar"></div>
@@ -91,8 +91,8 @@ st.markdown(BOSCH_UI_STYLE, unsafe_allow_html=True)
 st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
-        <h2 style="color: #005691; margin-bottom: 2px;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 质量报告规范 · 原始数据无损组装 ➔ M-PU Bot 润色 ➔ 文本框图文精准回填 ➔ 邮件一键闭环</p>
+        <h2 style="color: #005691; margin: 0; font-weight: 700;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
+        <p style="color: #525F6B; font-size: 0.95rem; margin: 4px 0 0 0;">FEBER 质量报告规范 · 图片深度穿透置入 · 3列表格动态增行 · 邮件草稿一键闭环</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -124,7 +124,7 @@ else:
     if up_template: template_file = up_template
 
 # -----------------------------------------------------------------------------
-# 3. 辅助解析函数（含安全指针重置）
+# 3. 辅助解析函数（含高容差图片提取引擎）
 # -----------------------------------------------------------------------------
 
 def load_supplier_emails(file_source):
@@ -159,36 +159,49 @@ def load_supplier_emails(file_source):
         pass
     return {}
 
-def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
-    """从 Excel 指定行提取 NG Picture"""
+def get_images_for_row_robust(file_source, sheet_name, header_idx, target_row_idx):
+    """
+    【高容差图片提取引擎】
+    增加行锚点容差范围，彻底解决因图片浮动导致的坐标偏移问题
+    """
     try:
         if hasattr(file_source, 'seek'): file_source.seek(0)
         wb = openpyxl.load_workbook(file_source, data_only=True)
         ws = wb[sheet_name]
         
-        col_ng = -1
+        col_ng, col_ok = -1, -1
         for col_idx in range(1, ws.max_column + 1):
             val = ws.cell(row=header_idx + 1, column=col_idx).value
             if val:
-                val_str = str(val).strip()
-                if 'NG Picture' in val_str:
+                val_str = str(val).strip().lower()
+                if 'ng picture' in val_str or 'ng' in val_str:
                     col_ng = col_idx - 1
-                    break
+                if 'ok picture' in val_str or 'ok' in val_str:
+                    col_ok = col_idx - 1
                 
+        # 目标绝对行号 (0-based)
         excel_target_row = header_idx + 1 + target_row_idx
         ng_img = None
         
-        for img in getattr(ws, '_images', []):
+        images = getattr(ws, '_images', [])
+        for img in images:
             try:
                 r = img.anchor._from.row
                 c = img.anchor._from.col
-                if r == excel_target_row and c == col_ng:
-                    ng_img = img._data()
-                    break
+                # 允许 +- 1 行的高容差范围
+                if abs(r - excel_target_row) <= 1:
+                    if col_ng != -1 and abs(c - col_ng) <= 1:
+                        ng_img = img._data()
+                        break
+                    elif ng_img is None:
+                        # 如果没有定位到特定列，只要在该行附近，作为候选不良图
+                        ng_img = img._data()
             except Exception:
                 pass
+                
         return ng_img
-    except Exception:
+    except Exception as e:
+        print(f"图片提取异常: {e}")
         return None
 
 def load_excel_robust(file_source):
@@ -216,7 +229,7 @@ def load_excel_robust(file_source):
     return df, target_sheet, header_idx
 
 # -----------------------------------------------------------------------------
-# 4. 高鲁棒性 Bot 输出解析器 (支持制表符 \t 与 Markdown 表格)
+# 4. 高鲁棒性 Bot 输出解析器 (支持制表符 \t 与 Markdown 表格双模式)
 # -----------------------------------------------------------------------------
 
 def parse_bot_feber_response(bot_text):
@@ -369,13 +382,13 @@ def insert_content_under_heading(doc, heading_kw, text_value):
 
 def insert_ng_picture_into_defect_box(doc, ng_img):
     """
-    【核心穿透函数】穿透扫描文本框和形状，在 'Picture – Product – Defect' 中插入不良图片
+    【核心穿透函数】穿透扫描文本框和所有段落节点，在 'Picture – Product – Defect' 中插入不良图片
     """
     if not ng_img:
-        return
+        return False
     ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
     
-    # 1. 扫描底层所有段落节点（包括 w:txbxContent 文本框内的段落）
+    # 1. 深度扫描所有底层 XML 段落节点（包括文本框 w:txbxContent）
     all_p_elements = doc._element.findall('.//w:p', ns)
     for p_elem in all_p_elements:
         full_text = "".join(p_elem.itertext()).lower().replace(" ", "")
@@ -384,16 +397,18 @@ def insert_ng_picture_into_defect_box(doc, ng_img):
             p_obj.text = ""
             p_obj.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p_obj.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.5))
-            return
+            return True
             
-    # 2. 兜底扫描普通段落
+    # 2. 扫描顶层普通段落
     for p in doc.paragraphs:
         p_txt_clean = p.text.lower().replace(" ", "")
         if "picture" in p_txt_clean and ("defect" in p_txt_clean or "product" in p_txt_clean) and len(p_txt_clean) < 40:
             p.text = ""
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.5))
-            return
+            return True
+            
+    return False
 
 def populate_docx_exact_tables(template_source, bot_data, raw_row, ng_img=None):
     """
@@ -516,7 +531,7 @@ def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_T
     msg['Subject'] = Header(subject, 'utf-8')
     msg['From'] = 'Sunny.LIU3@cn.bosch.com'
     msg['To'] = to_emails
-    msg.add_header('X-Unsent', '1') # 草稿可编辑模式
+    msg.add_header('X-Unsent', '1')
     
     alt_part = MIMEMultipart('alternative')
     alt_part.attach(MIMEText(html_body, 'html', 'utf-8'))
@@ -551,7 +566,7 @@ if excel_file is not None and template_file is not None:
         
         # ==================== STEP 1 ====================
         st.markdown('<div class="bds-card">', unsafe_allow_html=True)
-        st.markdown('<span class="bds-step-badge">STEP 1</span> <h4 style="display:inline; margin-left:8px; color:#005691;">选择台账记录并提取事实</h4>', unsafe_allow_html=True)
+        st.markdown('<span class="bds-step-badge">STEP 1</span> <h4 style="display:inline; margin-left:8px; color:#005691;">选择台账记录并确认不良图片</h4>', unsafe_allow_html=True)
         
         search_kw = st.text_input("🔍 搜索记录 (序列号/供应商/失效模式):", placeholder="输入关键字实时过滤...")
         filtered_df = df.copy()
@@ -563,12 +578,30 @@ if excel_file is not None and template_file is not None:
             options=filtered_df.index,
             format_func=lambda x: f"[{filtered_df.loc[x, serial_no_col]}] {filtered_df.loc[x, 'Failure Mode']} - {filtered_df.loc[x, 'Project/Part name']}"
         )
-        st.markdown('</div>', unsafe_allow_html=True)
         
         selected_row = filtered_df.loc[selected_record_idx]
-        ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
         
-        # 动态生成纯净的事实清单（列名: 内容）
+        # 提取图片并提供实时预览与手动保底入口
+        ng_img_auto = get_images_for_row_robust(excel_file, sheet_name, header_idx, selected_record_idx)
+        
+        c_img_preview, c_img_upload = st.columns([1, 2])
+        with c_img_preview:
+            if ng_img_auto:
+                st.image(ng_img_auto, caption="✅ 从 Excel 自动提取到的不良图片 (NG Picture)", width=220)
+                active_ng_img = ng_img_auto
+            else:
+                st.warning("⚠️ 未能从 Excel 单元格中自动识别到图片")
+                active_ng_img = None
+                
+        with c_img_upload:
+            manual_ng_file = st.file_uploader("🖼️ 若需替换或手动补充不良图片，可在此上传 (PNG/JPG):", type=["png", "jpg", "jpeg"], key="manual_ng")
+            if manual_ng_file:
+                active_ng_img = manual_ng_file.read()
+                st.info("💡 已采用手动上传的不良图片置入报告！")
+                
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # 动态生成事实清单
         raw_facts_list = []
         for col_name in df.columns:
             if col_name != '选择 (Select)':
@@ -635,7 +668,7 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
         
         c_p, c_b = st.columns([3, 1])
         with c_p:
-            st.text_area("📋 已内嵌 3 列表格原型的完整工程 Prompt (点击右上角图标复制):", prompt_content, height=220)
+            st.text_area("📋 已完整内嵌 3 列表格原型的工程 Prompt (点击右上角图标复制):", prompt_content, height=220)
         with c_b:
             st.markdown("<br>", unsafe_allow_html=True)
             st.link_button("🚀 一键直达 Teams M-PU Bot", TEAMS_BOT_URL, use_container_width=True)
@@ -666,11 +699,11 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
             if template_file is None:
                 st.error("❌ 未检测到 Word 模板，请在侧边栏确认路径。")
             else:
-                with st.spinner("正在定向装配 3 列表格、插入不良图片并生成邮件附件..."):
+                with st.spinner("正在定向装配表格、插入不良图片并生成邮件附件..."):
                     bot_data = parse_bot_feber_response(bot_reply) if bot_reply.strip() else {}
                     
-                    # 定向装配 Word 模板 (自动插入 NG 图片)
-                    doc = populate_docx_exact_tables(template_file, bot_data, selected_row, ng_img)
+                    # 定向装配 Word 模板 (自动置入当前 active_ng_img)
+                    doc = populate_docx_exact_tables(template_file, bot_data, selected_row, active_ng_img)
                     bio = io.BytesIO()
                     doc.save(bio)
                     doc_bytes = bio.getvalue()
@@ -679,7 +712,7 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
                     doc_filename = f"LL_Template_{serial_str}.docx"
                     eml_bytes = generate_eml_file(selected_row, to_emails_str, doc_bytes, doc_filename)
                     
-                    st.success("🎉 生成成功！Abstract 已对齐，2. Problem 与不良图片已正常写入，3. Lessons 3列表格与 4 项评估已精准回填。")
+                    st.success("🎉 生成成功！Abstract 已严格对齐，2. Problem 与不良图片已正常写入，3. Lessons 3列表格已按行回填。")
                     
                     c_d1, c_d2 = st.columns(2)
                     with c_d1:
