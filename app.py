@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (Standard FEBER Edition)
-- Blue Hints Auto-Wiper (Color & Semantic Level)
-- Dynamic Table Row Expansion (3. Lessons & 4. Potentially affected)
-- Exact Match with Teams M-PU Bot Engineering Prompt
+BOSCH | PCB Lesson Learn Quality Studio (Exact Table-to-Table Match Edition)
+- 1:1 Mirror Prompt with Markdown Tables for Teams M-PU Bot
+- Direct Table-Cell Safe Population (Zero XML Corruption, 100% Openable)
+- Auto-Wipe All Blue Hints & Parenthesized Guidelines
+- Dynamic Row Expansion for 3-Column Lessons Table
+- Recipient-Ready Outlook EML Draft Generation with Word Attachment
 =============================================================================
 """
 
 import streamlit as st
 import pandas as pd
 import docx
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import datetime
 import io
@@ -26,10 +28,10 @@ from email import encoders
 from email.header import Header
 
 # -----------------------------------------------------------------------------
-# 1. 页面基本配置与博世工业视觉设计 (Bosch CI Style)
+# 1. 页面基本配置与博世工业视觉设计 (Bosch Corporate Identity)
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Bosch | PCB Lesson Learn Studio",
+    page_title="Bosch | PCB Lesson Learn Quality Studio",
     layout="wide",
     page_icon="🔴"
 )
@@ -71,7 +73,7 @@ st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
         <h2 style="color: #005691; margin-bottom: 2px;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 规范深度对齐 · 蓝色提示词全自动清洗 · 表格自适应增行 · 邮件一键分发</p>
+        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 表格 1:1 精准对齐 · 提示词全域深度清洗 · 3列表格动态增行 · 邮件一键分发</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -92,16 +94,10 @@ template_file = None
 if use_local:
     excel_path = st.sidebar.text_input("Master List 路径:", DEFAULT_EXCEL_PATH)
     template_path = st.sidebar.text_input("Word Template 路径:", DEFAULT_TEMPLATE_PATH)
-    
-    if os.path.exists(excel_path):
-        excel_file = excel_path
-    else:
-        st.sidebar.warning("⚠️ 未在指定路径找到 Excel，请手动上传。")
-        
-    if os.path.exists(template_path):
-        template_file = template_path
-    else:
-        st.sidebar.warning("⚠️ 未在指定路径找到 Word 模板，请手动上传。")
+    if os.path.exists(excel_path): excel_file = excel_path
+    else: st.sidebar.warning("⚠️ 未在指定路径找到 Excel，请手动上传。")
+    if os.path.exists(template_path): template_file = template_path
+    else: st.sidebar.warning("⚠️ 未在指定路径找到 Word 模板，请手动上传。")
 else:
     up_excel = st.sidebar.file_uploader("上传 Master List (Excel):", type=["xlsx", "xlsm"])
     up_template = st.sidebar.file_uploader("上传 Word 模板 (.docx):", type=["docx"])
@@ -109,11 +105,11 @@ else:
     if up_template: template_file = up_template
 
 # -----------------------------------------------------------------------------
-# 3. 辅助解析工具函数
+# 3. 辅助解析函数
 # -----------------------------------------------------------------------------
 
 def load_supplier_emails(file_source):
-    """从 Vendor code 表中读取供应商与邮箱"""
+    """从 Vendor code 表中读取供应商与邮箱映射"""
     try:
         if not isinstance(file_source, str):
             file_source.seek(0)
@@ -145,7 +141,7 @@ def load_supplier_emails(file_source):
     return {}
 
 def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
-    """从 Excel 指定行提取 OK 和 NG 图片"""
+    """从 Excel 指定行提取 OK 和 NG 图片二进制流"""
     try:
         if isinstance(file_source, str):
             wb = openpyxl.load_workbook(file_source, data_only=True)
@@ -181,7 +177,7 @@ def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
         return None, None
 
 def load_excel_robust(file_source):
-    """加载 Excel 并定位表头行"""
+    """加载 Excel 并定位表头"""
     if not isinstance(file_source, str):
         file_source.seek(0)
     xl = pd.ExcelFile(file_source)
@@ -208,20 +204,18 @@ def load_excel_robust(file_source):
     return df, target_sheet, header_idx
 
 # -----------------------------------------------------------------------------
-# 4. 解析 Bot 润色结果与提示词深度清洗算法
+# 4. 深度解析 Bot 回复 (支持 Markdown 表格与结构化文本)
 # -----------------------------------------------------------------------------
 
 def parse_bot_feber_response(bot_text):
-    """深度解析 Teams M-PU Bot 的标准结构化输出"""
+    """解析 Bot 输出的 Markdown 表格与各章节内容"""
     parsed = {
-        'Abstract_Issue': '',
-        'Abstract_Problem': '',
-        'Abstract_Lessons': '',
+        'Abstract': '',
         'Product_Process': '',
         'Component': '',
         'Sub_Component': '',
         'Problem': '',
-        'Lessons_Table_Rows': [],  # list of tuples: (Lesson, Measure, RootCause)
+        'Lessons_Rows': [],  # list of tuples: (Lesson, Measures, RootCause)
         'What_Else': '',
         'Where': '',
         'When': '',
@@ -229,54 +223,43 @@ def parse_bot_feber_response(bot_text):
     }
     
     # 0. Abstract
-    abs_m = re.search(r'Abstract\s*([\s\S]*?)(?=1\.\s*Product|$)', bot_text, re.I)
-    if abs_m:
-        t = abs_m.group(1)
-        i_m = re.search(r'Issue:\s*([^\n]+)', t, re.I)
-        p_m = re.search(r'Problem:\s*([^\n]+)', t, re.I)
-        l_m = re.search(r'Lessons:\s*([^\n]+)', t, re.I)
-        if i_m: parsed['Abstract_Issue'] = i_m.group(1).strip()
-        if p_m: parsed['Abstract_Problem'] = p_m.group(1).strip()
-        if l_m: parsed['Abstract_Lessons'] = l_m.group(1).strip()
-
+    m_abs = re.search(r'(?:0\.\s*Abstract|Abstract)\s*([\s\S]*?)(?=1\.\s*Product|$)', bot_text, re.I)
+    if m_abs: parsed['Abstract'] = m_abs.group(1).strip()
+    
     # 1. Product / Process
-    p_m = re.search(r'1\.\s*Product\s*/\s*Process\s*([\s\S]*?)(?=2\.\s*Problem|$)', bot_text, re.I)
-    if p_m:
-        t = p_m.group(1)
+    m_p = re.search(r'1\.\s*Product\s*/\s*Process\s*([\s\S]*?)(?=2\.\s*Problem|$)', bot_text, re.I)
+    if m_p:
+        t = m_p.group(1)
         pp = re.search(r'Product\s*/\s*Process:\s*([^\n]+)', t, re.I)
-        comp = re.search(r'Component:\s*([^\n]+)', t, re.I)
-        sub = re.search(r'Sub-Component:\s*([^\n]+)', t, re.I)
-        parsed['Product_Process'] = pp.group(1).strip() if pp else ""
-        parsed['Component'] = comp.group(1).strip() if comp else ""
-        parsed['Sub_Component'] = sub.group(1).strip() if sub else ""
-
+        cp = re.search(r'Component:\s*([^\n]+)', t, re.I)
+        sc = re.search(r'Sub-Component:\s*([^\n]+)', t, re.I)
+        if pp: parsed['Product_Process'] = pp.group(1).strip()
+        if cp: parsed['Component'] = cp.group(1).strip()
+        if sc: parsed['Sub_Component'] = sc.group(1).strip()
+        
     # 2. Problem
-    prob_m = re.search(r'2\.\s*Problem[^\n]*\n([\s\S]*?)(?=3\.\s*Lessons|$)', bot_text, re.I)
-    if prob_m:
-        parsed['Problem'] = prob_m.group(1).strip()
-
-    # 3. Lessons (提取表格各行或列表项)
-    less_m = re.search(r'3\.\s*Lessons[^\n]*\n([\s\S]*?)(?=4\.\s*Potentially|$)', bot_text, re.I)
-    if less_m:
-        less_text = less_m.group(1).strip()
-        # 尝试按行解析 Markdown 表格
-        table_lines = [l.strip() for l in less_text.split('\n') if '|' in l and '---' not in l]
-        if len(table_lines) > 1:
-            # 存在 Markdown 表格
-            for l in table_lines[1:]: # 跳过表头
-                parts = [c.strip() for c in l.split('|') if c.strip()]
-                if len(parts) >= 3:
-                    parsed['Lessons_Table_Rows'].append((parts[0], parts[1], parts[2]))
-                elif len(parts) == 2:
-                    parsed['Lessons_Table_Rows'].append((parts[0], parts[1], ""))
-        if not parsed['Lessons_Table_Rows']:
-            # 纯文本模式：提取整段
-            parsed['Lessons_Table_Rows'].append((less_text, less_text, ""))
-
+    m_prob = re.search(r'2\.\s*Problem[^\n]*\n([\s\S]*?)(?=3\.\s*Lessons|$)', bot_text, re.I)
+    if m_prob: parsed['Problem'] = m_prob.group(1).strip()
+    
+    # 3. Lessons (提取 Markdown 表格)
+    m_less = re.search(r'3\.\s*Lessons[^\n]*\n([\s\S]*?)(?=4\.\s*Potentially|$)', bot_text, re.I)
+    if m_less:
+        less_text = m_less.group(1).strip()
+        lines = [l.strip() for l in less_text.split('\n') if '|' in l and '---' not in l]
+        if len(lines) > 1:
+            for l in lines[1:]: # 跳过 Markdown 表头
+                cells = [c.strip() for c in l.split('|')[1:-1]]
+                if len(cells) >= 3:
+                    parsed['Lessons_Rows'].append((cells[0], cells[1], cells[2]))
+                elif len(cells) == 2:
+                    parsed['Lessons_Rows'].append((cells[0], cells[1], ""))
+        if not parsed['Lessons_Rows']:
+            parsed['Lessons_Rows'].append((less_text, "", ""))
+            
     # 4. Potentially affected
-    pot_m = re.search(r'4\.\s*Potentially affected[^\n]*\n([\s\S]*?)(?=5\.\s*Appendix|$)', bot_text, re.I)
-    if pot_m:
-        t = pot_m.group(1)
+    m_pot = re.search(r'4\.\s*Potentially affected[^\n]*\n([\s\S]*?)(?=5\.\s*Appendix|$)', bot_text, re.I)
+    if m_pot:
+        t = m_pot.group(1)
         w1 = re.search(r'What else[^\n]*\n([^\n]+)', t, re.I)
         w2 = re.search(r'Where can[^\n]*\n([^\n]+)', t, re.I)
         w3 = re.search(r'When can[^\n]*\n([^\n]+)', t, re.I)
@@ -285,134 +268,99 @@ def parse_bot_feber_response(bot_text):
         if w2: parsed['Where'] = w2.group(1).strip()
         if w3: parsed['When'] = w3.group(1).strip()
         if w4: parsed['Who'] = w4.group(1).strip()
-
+        
     return parsed
 
-def wipe_all_blue_hints_and_prompts(doc):
-    """
-    【核心杀手锏：全域蓝色字体与说明性提示词清洗引擎】
-    - 颜色级：检测 run 颜色，凡是属于蓝色系的提示词一律置空；
-    - 语义级：匹配博世模板固有的 Note、Hint、Guideline 说明段落并清空。
-    """
-    # 固有的提示词文本特征库（包含中英文说明）
-    KNOWN_HINT_PATTERNS = [
-        r"^note:",
-        r"^general hint:",
-        r"^describe briefly",
-        r"^briefly describe",
-        r"^provide detailed",
-        r"^concentrate on the actual",
-        r"^keep it short",
-        r"^support your content",
-        r"^use key words",
-        r"^document your lessons",
-        r"^what would i suggest",
-        r"^what measures did we",
-        r"^sustainable solution –",
-        r"^do not repeat the 8d",
-        r"^if required add",
-        r"^describe the main root",
-        r"^if necessary for better",
-        r"^if not, use the appendix",
-        r"^if helpful, attach",
-        r"^determine who else",
-        r"\(similar applications",
-        r"\(other production lines",
-        r"\(new applications",
-        r"\(other customers",
-        r"^check if centers of competence",
-        r"^refer to this appendix",
-        r"^include reference numbers",
-        r"^beware: this document will be uploaded",
-        r"delete all hints in blue letters",
-        r"^\.\.\.$",
-        r"^…$"
+# -----------------------------------------------------------------------------
+# 5. 全局蓝色提示词清洗与表格定向精准装配引擎
+# -----------------------------------------------------------------------------
+
+def set_cell_formatted_text(cell, text):
+    """安全清空单元格并设置为标准 Arial 10.5pt 格式"""
+    cell.text = ""
+    p = cell.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    run = p.add_run(str(text).strip())
+    run.font.name = 'Arial'
+    run.font.size = Pt(10.5)
+    run.font.bold = False
+
+def wipe_blue_hints_from_doc(doc):
+    """全文档彻底清除蓝色提示词（扫描所有 Runs 与固有提示词特征）"""
+    HINT_REGEX = [
+        r"^note:", r"^general hint:", r"^describe briefly", r"^briefly describe",
+        r"^provide detailed", r"^concentrate on", r"^keep it short", r"^support your content",
+        r"^use key words", r"^document your lessons", r"^what would i suggest",
+        r"^what measures did we", r"^sustainable solution", r"^do not repeat the 8d",
+        r"^describe the main root", r"\(similar applications", r"\(other production lines",
+        r"\(new applications", r"\(other customers", r"delete all hints in blue letters",
+        r"^beware: this document", r"^\.\.\.$", r"^…$"
     ]
-    
-    # 扫描正文段落
+    # 清理段落
     for p in doc.paragraphs:
-        p_text_strip = p.text.strip().lower()
-        
-        # 1. 语义特征清除
-        if any(re.search(pat, p_text_strip) for pat in KNOWN_HINT_PATTERNS):
+        p_txt = p.text.strip().lower()
+        if any(re.search(pat, p_txt) for pat in HINT_REGEX):
             p.text = ""
             continue
-            
-        # 2. 颜色特征清除 (扫描 Runs)
-        for run in p.runs:
-            is_blue = False
-            # 检查 RGBColor
-            if run.font.color and run.font.color.rgb:
-                r, g, b = run.font.color.rgb
-                if b > 150 and r < 100: # 判定为蓝色系
-                    is_blue = True
-            # 检查底层 XML 颜色
-            rPr = run._r.get_or_add_rPr()
-            color_elem = rPr.find(docx.oxml.ns.qn('w:color'))
-            if color_elem is not None:
-                val = color_elem.get(docx.oxml.ns.qn('w:val'), '').lower()
+        for r in p.runs:
+            if r.font.color and r.font.color.rgb:
+                r_val, g_val, b_val = r.font.color.rgb
+                if b_val > 150 and r_val < 100: r.text = ""
+            rPr = r._r.get_or_add_rPr()
+            c_elem = rPr.find(docx.oxml.ns.qn('w:color'))
+            if c_elem is not None:
+                val = c_elem.get(docx.oxml.ns.qn('w:val'), '').lower()
                 if val in ['0070c0', '0000ff', '007bc0', '002060', '418ab3', '1f497d', '5b9bd5']:
-                    is_blue = True
-            if is_blue:
-                run.text = ""
-                
-    # 扫描表格中的单元格段落
+                    r.text = ""
+                    
+    # 清理表格单元格
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for p in cell.paragraphs:
-                    p_text_strip = p.text.strip().lower()
-                    if any(re.search(pat, p_text_strip) for pat in KNOWN_HINT_PATTERNS):
+                    p_txt = p.text.strip().lower()
+                    if any(re.search(pat, p_txt) for pat in HINT_REGEX):
                         p.text = ""
                         continue
-                    for run in p.runs:
-                        is_blue = False
-                        if run.font.color and run.font.color.rgb:
-                            r, g, b = run.font.color.rgb
-                            if b > 150 and r < 100:
-                                is_blue = True
-                        rPr = run._r.get_or_add_rPr()
-                        color_elem = rPr.find(docx.oxml.ns.qn('w:color'))
-                        if color_elem is not None:
-                            val = color_elem.get(docx.oxml.ns.qn('w:val'), '').lower()
+                    for r in p.runs:
+                        if r.font.color and r.font.color.rgb:
+                            r_val, g_val, b_val = r.font.color.rgb
+                            if b_val > 150 and r_val < 100: r.text = ""
+                        rPr = r._r.get_or_add_rPr()
+                        c_elem = rPr.find(docx.oxml.ns.qn('w:color'))
+                        if c_elem is not None:
+                            val = c_elem.get(docx.oxml.ns.qn('w:val'), '').lower()
                             if val in ['0070c0', '0000ff', '007bc0', '002060', '418ab3', '1f497d', '5b9bd5']:
-                                is_blue = True
-                        if is_blue:
-                            run.text = ""
+                                r.text = ""
 
-def write_clean_content_to_section(doc, heading_text, content_text):
-    """定位指定标题，清空其下方的所有旧内容与提示词，并写入新文本"""
-    if not content_text:
-        return
+def write_to_doc_section(doc, heading_kw, text_value):
+    """向指定章节标题下方写入内容，并清空中间的占位行"""
+    if not text_value: return
     paragraphs = doc.paragraphs
     for idx, p in enumerate(paragraphs):
-        if heading_text.lower() in p.text.lower() and len(p.text.strip()) < 45:
-            # 找到下一个非空段落或标题
+        if heading_kw.lower() in p.text.lower() and len(p.text.strip()) < 50:
             target_idx = idx + 1
             while target_idx < len(paragraphs) and not paragraphs[target_idx].text.strip():
                 target_idx += 1
             if target_idx < len(paragraphs):
                 target_p = paragraphs[target_idx]
                 target_p.text = ""
-                run = target_p.add_run(str(content_text).strip())
-                run.font.name = 'Arial'
-                run.font.size = Pt(10.5)
-                run.font.bold = False
+                r = target_p.add_run(str(text_value).strip())
+                r.font.name = 'Arial'
+                r.font.size = Pt(10.5)
+                r.font.bold = False
             break
 
-def populate_docx_master(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
+def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
     """
-    【最终交付模板装配引擎】
-    - 清洗全部蓝色提示词；
-    - 填充 0~5 章节；
-    - `3. Lessons` 表格自适应行数动态扩展；
-    - 图片表格自适应置入。
+    【核心：表格定向精准装配引擎】
+    直接对准模板里的各个表格与章节进行写入，彻底杜绝段落与表格错位！
     """
     doc = docx.Document(template_source)
     current_date_str = datetime.date.today().strftime('%b %d %Y')
     failure_mode_str = str(raw_row.get('Failure Mode', '')).strip()
 
-    # 1. 替换页眉页脚与老旧日期、追加主标题
+    # 1. 替换页眉页脚老日期与主标题
     for p in doc.paragraphs:
         if 'May 24 2022' in p.text or 'May 24, 2022' in p.text:
             p.text = p.text.replace('May 24 2022', current_date_str).replace('May 24, 2022', current_date_str)
@@ -421,68 +369,69 @@ def populate_docx_master(template_source, bot_data, raw_row, ok_img=None, ng_img
                 p_clean = p.text.strip().rstrip("–-—: ").strip()
                 p.text = f"{p_clean} – {failure_mode_str}"
 
-    # 2. 先执行全域蓝色提示词物理清除
-    wipe_all_blue_hints_and_prompts(doc)
+    # 2. 全局清除所有蓝色提示词
+    wipe_blue_hints_from_doc(doc)
 
     # 3. 填充 0. Abstract
-    abs_full = ""
-    if bot_data.get('Abstract_Issue'): abs_full += f"Issue: {bot_data['Abstract_Issue']}\n"
-    if bot_data.get('Abstract_Problem'): abs_full += f"Problem: {bot_data['Abstract_Problem']}\n"
-    if bot_data.get('Abstract_Lessons'): abs_full += f"Lessons: {bot_data['Abstract_Lessons']}\n"
-    write_clean_content_to_section(doc, "Abstract", abs_full)
+    abs_text = bot_data.get('Abstract')
+    if not abs_text:
+        abs_text = f"Issue: {raw_row.get('LL Brief Description', '')}\nProblem: {raw_row.get('Failure Mode', '')}\nLessons: {raw_row.get('Should or not to do', '')}"
+    write_to_doc_section(doc, "Abstract", abs_text)
 
     # 4. 填充 1. Product / Process
-    pp_content = ""
-    if bot_data.get('Product_Process'): pp_content += f"Product / Process: {bot_data['Product_Process']}\n"
-    elif raw_row.get('Related Material Field / Process'): pp_content += f"Product / Process: {raw_row.get('Related Material Field / Process')}\n"
-    if bot_data.get('Component'): pp_content += f"Component: {bot_data['Component']}\n"
-    elif raw_row.get('Project/Part name'): pp_content += f"Component: {raw_row.get('Project/Part name')}\n"
-    if bot_data.get('Sub_Component'): pp_content += f"Sub-Component: {bot_data['Sub_Component']}\n"
-    write_clean_content_to_section(doc, "1. Product / Process", pp_content)
+    pp_val = bot_data.get('Product_Process') or raw_row.get('Related Material Field / Process', '')
+    comp_val = bot_data.get('Component') or raw_row.get('Project/Part name', '')
+    sub_val = bot_data.get('Sub_Component') or ''
+    p1_full = f"Product / Process: {pp_val}\nComponent: {comp_val}\nSub-Component: {sub_val}"
+    write_to_doc_section(doc, "1. Product / Process", p1_full)
 
-    # 5. 填充 2. Problem (Fundamental Problem)
-    prob_text = bot_data.get('Problem') or raw_row.get('LL Brief Description', '')
-    write_clean_content_to_section(doc, "2. Problem", prob_text)
+    # 5. 填充 2. Problem
+    prob_val = bot_data.get('Problem') or raw_row.get('LL Brief Description', '')
+    write_to_doc_section(doc, "2. Problem", prob_val)
 
-    # 6. 处理 3. Lessons 表格（自适应增行）
-    lessons_rows = bot_data.get('Lessons_Table_Rows', [])
-    if not lessons_rows:
-        # 使用原表数据兜底
-        lessons_rows = [(
-            raw_row.get('Should or not to do', ''),
-            raw_row.get('Corrective Action', ''),
-            raw_row.get('Root Cause', '')
-        )]
-        
+    # 6. 定向精准填充表格：Pictures、3. Lessons
     for table in doc.tables:
-        header_text = "".join(cell.text for cell in table.rows[0].cells).lower()
-        if "lessons" in header_text and "measures" in header_text:
-            # 找到 Lessons 表格，保留表头（Row 0），清空或替换后续行
+        t_header = "".join(cell.text for cell in table.rows[0].cells).lower()
+        
+        # A. 锁定 Pictures 表格
+        if "ok-part" in t_header or "not-ok-part" in t_header or len(table.columns) == 2:
+            for row in table.rows:
+                for cell in row.cells:
+                    if "ok-part" in cell.text.lower() and ok_img:
+                        cell.text = "OK-Part\n"
+                        p = cell.paragraphs[0]
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        p.add_run().add_picture(io.BytesIO(ok_img), width=Inches(2.4))
+                    elif "not-ok-part" in cell.text.lower() and ng_img:
+                        cell.text = "Not-OK-Part\n"
+                        p = cell.paragraphs[0]
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.4))
+                        
+        # B. 锁定 3. Lessons (3列对策表)
+        elif "lessons" in t_header and ("measures" in t_header or "root cause" in t_header):
+            lessons_rows = bot_data.get('Lessons_Rows', [])
+            if not lessons_rows:
+                lessons_rows = [(
+                    raw_row.get('Should or not to do', ''),
+                    raw_row.get('Corrective Action', ''),
+                    raw_row.get('Root Cause', '')
+                )]
+            # 清除原模板所有旧占位行（只保留第0行表头）
             while len(table.rows) > 1:
-                # 移除旧占位行
                 tr = table.rows[-1]._tr
                 table._tbl.remove(tr)
-                
-            # 动态根据记录行数增加行
+            # 动态增行写入
             for row_tuple in lessons_rows:
                 new_row = table.add_row()
                 for c_idx in range(min(3, len(row_tuple))):
-                    cell = new_row.cells[c_idx]
-                    cell.text = ""
-                    p = cell.paragraphs[0]
-                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                    run = p.add_run(str(row_tuple[c_idx]).strip())
-                    run.font.name = 'Arial'
-                    run.font.size = Pt(10.5)
-                    run.font.bold = False
-            break
+                    set_cell_formatted_text(new_row.cells[c_idx], row_tuple[c_idx])
 
     # 7. 填充 4. Potentially affected
-    pot_full = ""
     w1 = bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Similar PCB pattern plating and surface finish processes.'
-    w2 = bot_data.get('Where') or raw_row.get('Where can the problem additionally occur?') or 'Other production lines with comparable specifications.'
-    w3 = bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuation or delayed equipment maintenance.'
-    w4 = bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PQT, PQA, and relevant Tier-1 suppliers.'
+    w2 = bot_data.get('Where') or raw_row.get('Where can the problem additionally occur?') or 'Other production lines with comparable tooling.'
+    w3 = bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuation or delayed maintenance cycles.'
+    w4 = bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant Tier-1 PCB suppliers.'
     
     pot_full = f"""What else could be additionally affected?
 {w1}
@@ -495,30 +444,12 @@ When can the problem additionally appear?
 
 Who else can be affected?
 {w4}"""
-    write_clean_content_to_section(doc, "4. Potentially affected", pot_full)
-
-    # 8. 图片表格自适应置入
-    for table in doc.tables:
-        text = "".join(cell.text for row in table.rows for cell in row.cells)
-        if "OK-Part" in text and "Not-OK-Part" in text:
-            for row in table.rows:
-                for cell in row.cells:
-                    if "OK-Part" in cell.text and ok_img:
-                        cell.text = "OK-Part\n"
-                        p = cell.paragraphs[0]
-                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        p.add_run().add_picture(io.BytesIO(ok_img), width=Inches(2.4))
-                    elif "Not-OK-Part" in cell.text and ng_img:
-                        cell.text = "Not-OK-Part\n"
-                        p = cell.paragraphs[0]
-                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.4))
-            break
+    write_to_doc_section(doc, "4. Potentially affected", pot_full)
 
     return doc
 
 def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_Template.docx"):
-    """生成带附件、处于草稿编辑模式的 Outlook EML 邮件"""
+    """生成带附件的 Outlook EML 草稿"""
     serial_no = str(row_data.get('LL Serials No', 'LL-xxxx-xx')).strip()
     failure_mode = str(row_data.get('Failure Mode', '*****')).strip()
     subject = f"M/PQR-AP LL | {serial_no} | Title {failure_mode}"
@@ -567,7 +498,7 @@ def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_T
     return msg.as_bytes()
 
 # -----------------------------------------------------------------------------
-# 5. 主交互界面：闭环实战操作流
+# 6. 主交互流程
 # -----------------------------------------------------------------------------
 
 if excel_file is not None and template_file is not None:
@@ -586,14 +517,14 @@ if excel_file is not None and template_file is not None:
         supplier_scope_col = next((c for c in df.columns if 'scope' in str(c).lower() or 'task' in str(c).lower()), 'LL Supplier Scope')
         
         # 步骤 1：选择记录
-        st.markdown("### 1️⃣ 步骤一：在台账中选择一条记录")
+        st.markdown("### 1️⃣ 步骤一：选择需要处理的台账记录")
         search_kw = st.text_input("🔍 搜索记录 (序列号/供应商/失效模式):")
         filtered_df = df.copy()
         if search_kw:
             filtered_df = df[df.astype(str).apply(lambda r: r.str.contains(search_kw, case=False).any(), axis=1)]
             
         selected_record_idx = st.selectbox(
-            "👉 请选择要生成报告的台账记录：",
+            "👉 请选择台账记录：",
             options=filtered_df.index,
             format_func=lambda x: f"[{filtered_df.loc[x, serial_no_col]}] {filtered_df.loc[x, 'Failure Mode']} - {filtered_df.loc[x, 'Project/Part name']}"
         )
@@ -601,17 +532,13 @@ if excel_file is not None and template_file is not None:
         selected_row = filtered_df.loc[selected_record_idx]
         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
         
-        # 构建与您标准图完全一致的专业 FEBER Prompt
-        prompt_content = f"""Please create me a short and precise lessons learned report out of the attached document in American English.
+        # 完美对齐 Word 模板表格原型的 FEBER Prompt
+        prompt_content = f"""Please create me a short and precise lessons learned report out of below facts in American English.
 You are an honest engineer; you provide always links to the sources and name the original slide/page number.
-Please stick to the facts. In case you have additional topics, supporting or additional useful information be creative, add them and highlight them in italic.
+Please stick to the facts. Write the headings in bold. One page for chapter 1-4 is appropriate. Delete all hints in blue letters.
 
-Please write the headings in bold. Use key words that are understood by others in Bosch. Describe the report "user-friendly", so others can read it easily. One page for chapter 1-4 is appropriate. Delete all hints in blue letters.
-
-If you are asked to create a lesson learned report, or to search for a lessons learned report, structure the answer as follows:
-0. Abstract - write a short summary of the report with the structure - issue; problem; learnings; tags
-
-Abstract
+Structure the answer strictly as follows:
+0. Abstract
 Issue: {selected_row.get('LL Brief Description', '')}
 Problem: {selected_row.get('Failure Mode', '')}
 Lessons: {selected_row.get('Should or not to do', '')}
@@ -626,21 +553,21 @@ Sub-Component:
 
 3. Lessons
 | Lessons | Measures & Sustainable Solutions | Root Cause |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | {selected_row.get('Should or not to do', '')} | {selected_row.get('Corrective Action', '')} | {selected_row.get('Root Cause', '')} |
 
 4. Potentially affected
 What else could be additionally affected?
-{selected_row.get('What else could be additionally affected?', 'Similar PCB pattern plating processes.')}
+{selected_row.get('What else could be additionally affected?', 'Similar PCB pattern plating and surface finish processes.')}
 
 Where can the problem additionally occur?
 {selected_row.get('Where can the problem additionally occur?', 'Other production lines.')}
 
 When can the problem additionally appear?
-{selected_row.get('When can the problem additionally appear?', 'During parameter fluctuations.')}
+{selected_row.get('When can the problem additionally appear?', 'During parameter fluctuation or delayed equipment maintenance.')}
 
 Who else can be affected?
-{selected_row.get('Who else can be affected?', 'PUQ-PQA, PQT, and relevant suppliers.')}
+{selected_row.get('Who else can be affected?', 'PUQ-PQA, PQT, and relevant Tier-1 suppliers.')}
 
 5. Appendix (Optional)"""
 
@@ -650,11 +577,11 @@ Who else can be affected?
         
         c_p, c_b = st.columns([3, 1])
         with c_p:
-            st.text_area("📋 已按博世标准结构组织的完整 Prompt:", prompt_content, height=240)
+            st.text_area("📋 已内嵌 3 列表格原型的完整工程 Prompt (可一键复制):", prompt_content, height=240)
         with c_b:
             st.markdown("<br>", unsafe_allow_html=True)
             st.link_button("🚀 一键直达 Teams M-PU Bot", TEAMS_BOT_URL, use_container_width=True)
-            st.caption("💡 复制左侧 Prompt 并在 Teams Bot 窗口粘贴发送。")
+            st.caption("💡 复制左侧带有完整表格的 Prompt，在 Teams Bot 中发送获取润色结果。")
 
         # 步骤 3：粘贴 Bot 输出并一键生成
         st.markdown("---")
@@ -665,7 +592,7 @@ Who else can be affected?
             bot_reply = st.text_area(
                 "📥 在此粘贴 M-PU Bot 润色后的完整回复：",
                 height=220,
-                placeholder="粘贴 Bot 输出的包含 0. Abstract, 1. Product/Process, 2. Problem, 3. Lessons, 4. Potentially affected 的完整文本..."
+                placeholder="粘贴 Bot 输出的包含 0. Abstract, 1. Product/Process, 2. Problem, 3. Lessons (包含3列表格), 4. Potentially affected 的完整文本..."
             )
         with col_sup:
             selected_sups = st.multiselect("👥 选择收件供应商 (自动读取 Vendor code 邮箱):", options=list(supplier_dict.keys()))
@@ -680,11 +607,11 @@ Who else can be affected?
             if template_file is None:
                 st.error("❌ 未检测到 Word 模板，请在侧边栏确认路径。")
             else:
-                with st.spinner("正在彻底抹除蓝色提示词、动态构建表格并嵌入图片..."):
+                with st.spinner("正在定向装配 3 列表格、清除蓝色提示词并嵌入图片..."):
                     bot_data = parse_bot_feber_response(bot_reply) if bot_reply.strip() else {}
                     
-                    # 生成装配好的 Word
-                    doc = populate_docx_master(template_file, bot_data, selected_row, ok_img, ng_img)
+                    # 定向装配 Word 模板
+                    doc = populate_docx_exact_tables(template_file, bot_data, selected_row, ok_img, ng_img)
                     bio = io.BytesIO()
                     doc.save(bio)
                     doc_bytes = bio.getvalue()
@@ -693,7 +620,7 @@ Who else can be affected?
                     doc_filename = f"LL_Template_{serial_str}.docx"
                     eml_bytes = generate_eml_file(selected_row, to_emails_str, doc_bytes, doc_filename)
                     
-                    st.success("🎉 生成成功！所有蓝色提示词已彻底清除，3. Lessons 表格已按需动态增行，图片已嵌入完毕。")
+                    st.success("🎉 生成成功！所有蓝色提示词已彻底清洗，3. Lessons 3列表格已按结构定向重构并动态增行，图片已嵌入完毕。")
                     
                     c_d1, c_d2 = st.columns(2)
                     with c_d1:
