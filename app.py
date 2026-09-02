@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (Standard FEBER Table Edition)
-- 1:1 Markdown Table Mirror Prompt Generator
-- Table-to-Table Safe Direct Population (3-Column Lessons & 4-Row Potentially Affected)
-- Auto-Fit Picture Insertion & Recipient-Ready Outlook EML Draft
+BOSCH | PCB Lesson Learn Quality Studio (Exact Mirror Prompt & Table Edition)
+- 100% Raw Excel Column:Value Extraction (Zero Hallucination)
+- Exact Match with Official Bosch FEBER Prompt Architecture
+- Direct 3-Column Lessons Table & 4-Row Potentially Affected Safe Population
+- Recipient-Ready Outlook EML Draft Generation with Word Attachment
 =============================================================================
 """
 
@@ -71,7 +72,7 @@ st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
         <h2 style="color: #005691; margin-bottom: 2px;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 表格 1:1 镜像对齐 · 3列表格动态增行 · 4项评估表格精准回填 · 邮件草稿一键闭环</p>
+        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">原始列值无损组装 ➔ Teams M-PU Bot 润色 ➔ 3列表格逐行精准回填 ➔ 邮件草稿一键闭环</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -202,11 +203,11 @@ def load_excel_robust(file_source):
     return df, target_sheet, header_idx
 
 # -----------------------------------------------------------------------------
-# 4. 深度解析 Bot 回复（支持多行 Markdown 表格与 4 问结构）
+# 4. 深度解析 Bot 回复（支持 3 列表格行提取）
 # -----------------------------------------------------------------------------
 
 def parse_bot_feber_response(bot_text):
-    """解析 Bot 按照 FEBER 规范输出的结构化文本与表格"""
+    """深度解析 Bot 输出的 Markdown 3列表格与各章节内容"""
     parsed = {
         'Abstract_Issue': '',
         'Abstract_Problem': '',
@@ -249,7 +250,7 @@ def parse_bot_feber_response(bot_text):
     if m_prob:
         parsed['Problem'] = m_prob.group(1).strip()
     
-    # 3. Lessons (提取 Markdown 3列表格中的所有行)
+    # 3. Lessons (提取 Markdown 3列表格中的每一行)
     m_less = re.search(r'3\.\s*Lessons[^\n]*\n([\s\S]*?)(?=4\.\s*Potentially|$)', bot_text, re.I)
     if m_less:
         less_text = m_less.group(1).strip()
@@ -318,7 +319,7 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
     - 1. Product/Process -> 段落
     - 2. Problem -> 段落
     - Pictures -> 图片表格 (OK-Part / Not-OK-Part)
-    - 3. Lessons -> 3列表格 (Lessons | Measures | Root Cause) 动态增行
+    - 3. Lessons -> 3列表格 (Lessons | Measures & Sustainable Solutions | Root Cause) 动态增行
     - 4. Potentially affected -> 2列4行表格 (What else / Where / When / Who)
     """
     doc = docx.Document(template_source)
@@ -371,7 +372,7 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
                         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.4))
                         
-        # B. 锁定 3. Lessons (3列对策表)
+        # B. 锁定 3. Lessons (3列对策表：Lessons | Measures & Sustainable Solutions | Root Cause)
         elif "lessons" in t_header and ("measures" in t_header or "root cause" in t_header):
             lessons_rows = bot_data.get('Lessons_Rows', [])
             if not lessons_rows:
@@ -487,19 +488,16 @@ if excel_file is not None and template_file is not None:
         selected_row = filtered_df.loc[selected_record_idx]
         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
         
-        # 构建完整嵌入表格的 FEBER Prompt (1:1 还原截图结构)
-        desc_val = selected_row.get('LL Brief Description', '')
-        fm_val = selected_row.get('Failure Mode', '')
-        should_val = selected_row.get('Should or not to do', '')
-        mat_val = selected_row.get('Related Material Field / Process', '')
-        proj_val = selected_row.get('Project/Part name', '')
-        ca_val = selected_row.get('Corrective Action', '')
-        rc_val = selected_row.get('Root Cause', '')
-        what_else_val = selected_row.get('What else could be additionally affected?', 'Similar PCB pattern plating and surface finish processes.')
-        where_val = selected_row.get('Where can the problem additionally occur?', 'Other production lines.')
-        when_val = selected_row.get('When can the problem additionally appear?', 'During parameter fluctuation or delayed equipment maintenance.')
-        who_val = selected_row.get('Who else can be affected?', 'PUQ-PQA, PQT, and relevant Tier-1 suppliers.')
-
+        # 1. 动态生成纯净的事实清单（列名: 内容）
+        raw_facts_list = []
+        for col_name in df.columns:
+            if col_name != '选择 (Select)':
+                val_str = str(selected_row.get(col_name, '')).strip()
+                if val_str and val_str not in ['nan', 'None']:
+                    raw_facts_list.append(f"{col_name}: {val_str}")
+        raw_facts_block = "\n".join(raw_facts_list)
+        
+        # 2. 构建完整嵌入 3 列表格原型的 FEBER Prompt (1:1 还原截图结构)
         prompt_content = f"""Please create me a short and precise lessons learned report out of the attached document in American English.
 You are an honest engineer; you provide always links to the sources and name the original slide/page number.
 Please stick to the facts. In case you have additional topics, supporting or additional useful information be creative, add them and highlight them in italic.
@@ -510,9 +508,9 @@ If you are asked to create a lesson learned report, or to search for a lessons l
 0. Abstract - write a short summary of the report with the structure - issue; problem; learnings; tags
 
 Abstract
-Issue: {desc_val}
-Problem: {fm_val}
-Lessons: {should_val}
+Issue: Describe briefly. Do not use abbreviations that are not commonly known.
+Problem: Briefly describe the main problem using key words.
+Lessons: Concentrate on the actual lessons learned. What is new? How can we prevent this issue in the future?
 
 Picture – Product – Defect
 General Hint:
@@ -521,42 +519,35 @@ General Hint:
 • Use key words that are understood by others in Bosch and not only in your area of expertise.
 
 1. Product / Process
-Product / Process: {mat_val}
-Component: {proj_val}
-Sub-Component: 
+Product / Process:
+Component:
+Sub-Component:
 
 2. Problem (Fundamental Problem)
 Note:
-Briefly describe the fundamental problem. Do not use technical root causes (TRC) or managerial root causes (MRC). Use pictures or graphs to visualize the problem. Avoid abbreviations that are specific to the division or product. If abbreviations are used, they must be explained either in the text or in the appendix.
-
-{desc_val}
+Briefly describe the fundamental problem. Do not use technical root causes (TRC) or managerial root causes (MRC). Use pictures or graphs to visualize the problem.
 
 3. Lessons
 Document your lessons in the table.
-• Describe your actual lessons, such as "What would I suggest my colleagues do differently next time in a similar situation?"
-• Provide a brief description of the cause and effect.
-• Explain what turned out to be new or missing knowledge at that time.
-
 | Lessons | Measures & Sustainable Solutions | Root Cause |
 | :--- | :--- | :--- |
-| {should_val} | {ca_val} | {rc_val} |
+| What do you suggest could be done differently next time. | What measures did we implement in our area that might also be useful to others? | Describe the main root cause only. |
 
 4. Potentially affected.
 Determine who else might find this information useful to the best of your knowledge:
 | Aspect | Description |
 | :--- | :--- |
-| What else could be additionally be affected? | {what_else_val} |
-| Where can the problem additionally occur? | {where_val} |
-| When can the problem additionally appear? | {when_val} |
-| Who else can be affected? | {who_val} |
+| What else could be additionally be affected? | (Similar applications, products, processes, …) or Not applicable |
+| Where can the problem additionally occur? | (Other production lines, plants, regions, …) or Not applicable |
+| When can the problem additionally appear? | (New applications, usage of products, …) or Not applicable |
+| Who else can be affected? | (Other customers, suppliers, associates, …) or Not applicable |
 
 Check if Centers of Competence (CoC) or BEO working groups should be informed: https://connect.bosch.com/communities/community/BEO
 
 5. Appendix (Optional)
-• Refer to this appendix for extra details that provide better insight on the above information, such as existing reports, presentations, or 8D documents.
-• Include reference numbers if available, like those from 8D, IQIS, or Ticket Systems.
 
-BEWARE: This document will be uploaded as a PDF file to the FEBER database. Since FEBER deletes embedded documents upon upload, make sure to include any embedded documents as additional pages"""
+==================== [Raw Master List Facts] ====================
+{raw_facts_block}"""
 
         # 步骤 2：复制 Prompt 并发给 Teams M-PU Bot
         st.markdown("---")
@@ -564,7 +555,7 @@ BEWARE: This document will be uploaded as a PDF file to the FEBER database. Sinc
         
         c_p, c_b = st.columns([3, 1])
         with c_p:
-            st.text_area("📋 已内嵌 3 列表格原型的完整工程 Prompt (可一键复制):", prompt_content, height=240)
+            st.text_area("📋 已完整内嵌 3 列表格原型的工程 Prompt (可一键复制):", prompt_content, height=240)
         with c_b:
             st.markdown("<br>", unsafe_allow_html=True)
             st.link_button("🚀 一键直达 Teams M-PU Bot", TEAMS_BOT_URL, use_container_width=True)
