@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (Standard FEBER Table-Matched Edition)
+BOSCH | PCB Lesson Learn Quality Studio (Exact FEBER Mirror Edition)
+- 1:1 Mirror Prompt with 3-Column Markdown Table for Teams M-PU Bot
+- Direct Table-Cell Safe Population (100% Openable DOCX)
+- Double-Pass Blue Hints & Guidelines Auto-Wiper
+- Dynamic Row Expansion for 3-Column Lessons Table & Auto-Fit Image Embedding
 =============================================================================
 """
 
 import streamlit as st
 import pandas as pd
 import docx
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import datetime
 import io
@@ -68,7 +72,7 @@ st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
         <h2 style="color: #005691; margin-bottom: 2px;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 表格 1:1 精准对齐 · 蓝色提示词全域深度清洗 · 3列表格动态增行 · 邮件一键分发</p>
+        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 表格 1:1 精准对齐 · 蓝色提示词全域清洗 · 3列表格动态增行 · 邮件一键分发</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -356,7 +360,10 @@ def write_to_doc_section(doc, heading_kw, text_value):
             break
 
 def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
-    """【表格定向精准装配引擎】"""
+    """
+    【表格定向精准装配引擎】
+    直接对准模板里的各个表格与章节进行写入，彻底杜绝段落与表格错位！
+    """
     doc = docx.Document(template_source)
     current_date_str = datetime.date.today().strftime('%b %d %Y')
     failure_mode_str = str(raw_row.get('Failure Mode', '')).strip()
@@ -430,10 +437,10 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
         # C. 锁定 4. Potentially affected (2列 4行表)
         elif "what else" in t_header or "potentially" in t_header or len(table.rows) == 4:
             w_map = {
-                0: bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Similar PCB pattern plating processes.',
+                0: bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Similar PCB pattern plating and surface finish processes.',
                 1: bot_data.get('Where') or raw_row.get('Where can the problem additionally occur?') or 'Other production lines.',
-                2: bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuations.',
-                3: bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant suppliers.'
+                2: bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuation or delayed equipment maintenance.',
+                3: bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant Tier-1 suppliers.'
             }
             for r_i, row in enumerate(table.rows):
                 if len(row.cells) >= 2 and r_i in w_map:
@@ -525,7 +532,7 @@ if excel_file is not None and template_file is not None:
         selected_row = filtered_df.loc[selected_record_idx]
         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
         
-        # 构建完整嵌入表格的 FEBER Prompt (1:1 还原截图规范)
+        # 完整嵌入 3 列表格原型的 FEBER Prompt
         prompt_content = f"""Please create me a short and precise lessons learned report out of the attached document in American English.
 You are an honest engineer; you provide always links to the sources and name the original slide/page number.
 Please stick to the facts. In case you have additional topics, supporting or additional useful information be creative, add them and highlight them in italic.
@@ -582,7 +589,7 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
 • Refer to this appendix for extra details that provide better insight on the above information, such as existing reports, presentations, or 8D documents.
 • Include reference numbers if available, like those from 8D, IQIS, or Ticket Systems."""
 
-        # 步骤 2：复制 Prompt 并在 Teams M-PU Bot 中润色
+        # 步骤 2：复制 Prompt 并发给 Teams M-PU Bot
         st.markdown("---")
         st.markdown("### 2️⃣ 步骤二：复制专属 Prompt 并发给 Teams M-PU ChatGPT Bot")
         
