@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (Exact Table-to-Table Match Edition)
-- 1:1 Mirror Prompt with Markdown Tables for Teams M-PU Bot
-- Direct Table-Cell Safe Population (Zero XML Corruption, 100% Openable)
-- Auto-Wipe All Blue Hints & Parenthesized Guidelines
-- Dynamic Row Expansion for 3-Column Lessons Table
-- Recipient-Ready Outlook EML Draft Generation with Word Attachment
+BOSCH | PCB Lesson Learn Quality Studio (1:1 Exact FEBER Table Edition)
+- 1:1 Mirror Prompt with Full Markdown Tables for Teams M-PU Bot
+- Non-Destructive Deep Table-Cell Population (100% Openable DOCX)
+- Double-Pass Blue Hints & Parenthesized Guidelines Auto-Wiper
+- Dynamic 3-Column Lessons Table & Auto-Fit Image Embedding
 =============================================================================
 """
 
@@ -28,7 +27,7 @@ from email import encoders
 from email.header import Header
 
 # -----------------------------------------------------------------------------
-# 1. 页面基本配置与博世工业视觉设计 (Bosch Corporate Identity)
+# 1. 页面基本配置与博世工业视觉体系 (Bosch CI Style)
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Bosch | PCB Lesson Learn Quality Studio",
@@ -208,7 +207,7 @@ def load_excel_robust(file_source):
 # -----------------------------------------------------------------------------
 
 def parse_bot_feber_response(bot_text):
-    """解析 Bot 输出的 Markdown 表格与各章节内容"""
+    """解析 Bot 输出的 Markdown 3列表格与各章节内容"""
     parsed = {
         'Abstract': '',
         'Product_Process': '',
@@ -241,19 +240,20 @@ def parse_bot_feber_response(bot_text):
     m_prob = re.search(r'2\.\s*Problem[^\n]*\n([\s\S]*?)(?=3\.\s*Lessons|$)', bot_text, re.I)
     if m_prob: parsed['Problem'] = m_prob.group(1).strip()
     
-    # 3. Lessons (提取 Markdown 表格)
+    # 3. Lessons (提取 Markdown 3列表格)
     m_less = re.search(r'3\.\s*Lessons[^\n]*\n([\s\S]*?)(?=4\.\s*Potentially|$)', bot_text, re.I)
     if m_less:
         less_text = m_less.group(1).strip()
         lines = [l.strip() for l in less_text.split('\n') if '|' in l and '---' not in l]
         if len(lines) > 1:
-            for l in lines[1:]: # 跳过 Markdown 表头
+            for l in lines[1:]: # 跳过表头
                 cells = [c.strip() for c in l.split('|')[1:-1]]
                 if len(cells) >= 3:
                     parsed['Lessons_Rows'].append((cells[0], cells[1], cells[2]))
                 elif len(cells) == 2:
                     parsed['Lessons_Rows'].append((cells[0], cells[1], ""))
         if not parsed['Lessons_Rows']:
+            # 如果不是 Markdown 表格，作为纯文本兜底
             parsed['Lessons_Rows'].append((less_text, "", ""))
             
     # 4. Potentially affected
@@ -272,7 +272,7 @@ def parse_bot_feber_response(bot_text):
     return parsed
 
 # -----------------------------------------------------------------------------
-# 5. 全局蓝色提示词清洗与表格定向精准装配引擎
+# 5. 全域蓝色提示词清洗与表格定向精准装配引擎
 # -----------------------------------------------------------------------------
 
 def set_cell_formatted_text(cell, text):
@@ -353,7 +353,7 @@ def write_to_doc_section(doc, heading_kw, text_value):
 
 def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
     """
-    【核心：表格定向精准装配引擎】
+    【表格定向精准装配引擎】
     直接对准模板里的各个表格与章节进行写入，彻底杜绝段落与表格错位！
     """
     doc = docx.Document(template_source)
