@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (Exact FEBER Mirror Edition)
-- 1:1 Mirror Prompt with 3-Column Markdown Table for Teams M-PU Bot
-- Direct Table-Cell Safe Population (100% Openable DOCX)
-- Double-Pass Blue Hints & Guidelines Auto-Wiper
-- Dynamic Row Expansion for 3-Column Lessons Table & Auto-Fit Image Embedding
+BOSCH | PCB Lesson Learn Quality Studio (Standard FEBER Table Edition)
+- 1:1 Markdown Table Mirror Prompt Generator
+- Table-to-Table Safe Direct Population (3-Column Lessons & 4-Row Potentially Affected)
+- Auto-Fit Picture Insertion & Recipient-Ready Outlook EML Draft
 =============================================================================
 """
 
@@ -27,7 +26,7 @@ from email import encoders
 from email.header import Header
 
 # -----------------------------------------------------------------------------
-# 1. 页面基本配置与博世工业视觉体系 (Bosch CI Style)
+# 1. 页面基本配置与博世工业视觉体系 (Bosch Corporate Identity)
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Bosch | PCB Lesson Learn Quality Studio",
@@ -72,7 +71,7 @@ st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
         <h2 style="color: #005691; margin-bottom: 2px;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 表格 1:1 精准对齐 · 蓝色提示词全域清洗 · 3列表格动态增行 · 邮件一键分发</p>
+        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 表格 1:1 镜像对齐 · 3列表格动态增行 · 4项评估表格精准回填 · 邮件草稿一键闭环</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -203,11 +202,11 @@ def load_excel_robust(file_source):
     return df, target_sheet, header_idx
 
 # -----------------------------------------------------------------------------
-# 4. 深度解析 Bot 回复 (支持 Markdown 表格与结构化文本)
+# 4. 深度解析 Bot 回复（支持多行 Markdown 表格与 4 问结构）
 # -----------------------------------------------------------------------------
 
 def parse_bot_feber_response(bot_text):
-    """解析 Bot 输出的 Markdown 3列表格与各章节内容"""
+    """解析 Bot 按照 FEBER 规范输出的结构化文本与表格"""
     parsed = {
         'Abstract_Issue': '',
         'Abstract_Problem': '',
@@ -245,17 +244,18 @@ def parse_bot_feber_response(bot_text):
         if cp: parsed['Component'] = cp.group(1).strip()
         if sc: parsed['Sub_Component'] = sc.group(1).strip()
         
-    # 2. Problem
+    # 2. Problem (Fundamental Problem)
     m_prob = re.search(r'2\.\s*Problem[^\n]*\n([\s\S]*?)(?=3\.\s*Lessons|$)', bot_text, re.I)
-    if m_prob: parsed['Problem'] = m_prob.group(1).strip()
+    if m_prob:
+        parsed['Problem'] = m_prob.group(1).strip()
     
-    # 3. Lessons (提取 Markdown 3列表格)
+    # 3. Lessons (提取 Markdown 3列表格中的所有行)
     m_less = re.search(r'3\.\s*Lessons[^\n]*\n([\s\S]*?)(?=4\.\s*Potentially|$)', bot_text, re.I)
     if m_less:
         less_text = m_less.group(1).strip()
         lines = [l.strip() for l in less_text.split('\n') if '|' in l and '---' not in l]
         if len(lines) > 1:
-            for l in lines[1:]: # 跳过表头
+            for l in lines[1:]: # 跳过表头行
                 cells = [c.strip() for c in l.split('|')[1:-1]]
                 if len(cells) >= 3:
                     parsed['Lessons_Rows'].append((cells[0], cells[1], cells[2]))
@@ -264,14 +264,14 @@ def parse_bot_feber_response(bot_text):
         if not parsed['Lessons_Rows']:
             parsed['Lessons_Rows'].append((less_text, "", ""))
             
-    # 4. Potentially affected
+    # 4. Potentially affected (提取表格或文本键值)
     m_pot = re.search(r'4\.\s*Potentially affected[^\n]*\n([\s\S]*?)(?=5\.\s*Appendix|$)', bot_text, re.I)
     if m_pot:
         t = m_pot.group(1)
-        w1 = re.search(r'What else[^\n]*\n([^\n]+)', t, re.I)
-        w2 = re.search(r'Where can[^\n]*\n([^\n]+)', t, re.I)
-        w3 = re.search(r'When can[^\n]*\n([^\n]+)', t, re.I)
-        w4 = re.search(r'Who else[^\n]*\n([^\n]+)', t, re.I)
+        w1 = re.search(r'What else[^\n|]*[\|\n]([^\n|]+)', t, re.I)
+        w2 = re.search(r'Where can[^\n|]*[\|\n]([^\n|]+)', t, re.I)
+        w3 = re.search(r'When can[^\n|]*[\|\n]([^\n|]+)', t, re.I)
+        w4 = re.search(r'Who else[^\n|]*[\|\n]([^\n|]+)', t, re.I)
         if w1: parsed['What_Else'] = w1.group(1).strip()
         if w2: parsed['Where'] = w2.group(1).strip()
         if w3: parsed['When'] = w3.group(1).strip()
@@ -280,7 +280,7 @@ def parse_bot_feber_response(bot_text):
     return parsed
 
 # -----------------------------------------------------------------------------
-# 5. 全域蓝色提示词清洗与表格定向精准装配引擎
+# 5. 精准装配 Word 模板核心函数 (100% 对应单元格与段落)
 # -----------------------------------------------------------------------------
 
 def set_cell_formatted_text(cell, text):
@@ -293,56 +293,8 @@ def set_cell_formatted_text(cell, text):
     run.font.size = Pt(10.5)
     run.font.bold = False
 
-def wipe_all_hints(doc):
-    """全域彻底清除蓝色提示词（扫描所有段落与表格）"""
-    HINT_REGEX = [
-        r"^please note:", r"^comment:", r"^general hint:", r"^describe briefly", r"^briefly describe",
-        r"^provide detailed", r"^concentrate on", r"^keep it short", r"^support your content",
-        r"^use key words", r"^document your lessons", r"^what would i suggest",
-        r"^what measures did we", r"^sustainable solution", r"^do not repeat the 8d",
-        r"^describe the main root", r"\(similar applications", r"\(other production lines",
-        r"\(new applications", r"\(other customers", r"delete all hints in blue letters",
-        r"^beware: this document", r"check if centers of competence", r"^\.\.\.$", r"^…$"
-    ]
-    # 清理正文段落
-    for p in doc.paragraphs:
-        p_txt = p.text.strip().lower()
-        if any(re.search(pat, p_txt) for pat in HINT_REGEX):
-            p.text = ""
-            continue
-        for r in p.runs:
-            if r.font.color and r.font.color.rgb:
-                r_val, g_val, b_val = r.font.color.rgb
-                if b_val > 150 and r_val < 100: r.text = ""
-            rPr = r._r.get_or_add_rPr()
-            c_elem = rPr.find(docx.oxml.ns.qn('w:color'))
-            if c_elem is not None:
-                val = c_elem.get(docx.oxml.ns.qn('w:val'), '').lower()
-                if val in ['0070c0', '0000ff', '007bc0', '002060', '418ab3', '1f497d', '5b9bd5']:
-                    r.text = ""
-                    
-    # 清理表格单元格
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for p in cell.paragraphs:
-                    p_txt = p.text.strip().lower()
-                    if any(re.search(pat, p_txt) for pat in HINT_REGEX):
-                        p.text = ""
-                        continue
-                    for r in p.runs:
-                        if r.font.color and r.font.color.rgb:
-                            r_val, g_val, b_val = r.font.color.rgb
-                            if b_val > 150 and r_val < 100: r.text = ""
-                        rPr = r._r.get_or_add_rPr()
-                        c_elem = rPr.find(docx.oxml.ns.qn('w:color'))
-                        if c_elem is not None:
-                            val = c_elem.get(docx.oxml.ns.qn('w:val'), '').lower()
-                            if val in ['0070c0', '0000ff', '007bc0', '002060', '418ab3', '1f497d', '5b9bd5']:
-                                r.text = ""
-
 def write_to_doc_section(doc, heading_kw, text_value):
-    """向指定章节标题下方写入内容，并清空中间的占位行"""
+    """向指定章节标题下方写入内容"""
     if not text_value: return
     paragraphs = doc.paragraphs
     for idx, p in enumerate(paragraphs):
@@ -362,7 +314,12 @@ def write_to_doc_section(doc, heading_kw, text_value):
 def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
     """
     【表格定向精准装配引擎】
-    直接对准模板里的各个表格与章节进行写入，彻底杜绝段落与表格错位！
+    - 0. Abstract -> 段落
+    - 1. Product/Process -> 段落
+    - 2. Problem -> 段落
+    - Pictures -> 图片表格 (OK-Part / Not-OK-Part)
+    - 3. Lessons -> 3列表格 (Lessons | Measures | Root Cause) 动态增行
+    - 4. Potentially affected -> 2列4行表格 (What else / Where / When / Who)
     """
     doc = docx.Document(template_source)
     current_date_str = datetime.date.today().strftime('%b %d %Y')
@@ -377,33 +334,30 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
                 p_clean = p.text.strip().rstrip("–-—: ").strip()
                 p.text = f"{p_clean} – {failure_mode_str}"
 
-    # 2. 全局清除所有蓝色提示词
-    wipe_all_hints(doc)
-
-    # 3. 填充 0. Abstract
+    # 2. 填充 0. Abstract
     abs_issue = bot_data.get('Abstract_Issue') or raw_row.get('LL Brief Description', '')
     abs_prob = bot_data.get('Abstract_Problem') or raw_row.get('Failure Mode', '')
     abs_less = bot_data.get('Abstract_Lessons') or raw_row.get('Should or not to do', '')
     abs_full = f"Issue: {abs_issue}\nProblem: {abs_prob}\nLessons: {abs_less}"
     write_to_doc_section(doc, "Abstract", abs_full)
 
-    # 4. 填充 1. Product / Process
+    # 3. 填充 1. Product / Process
     pp_val = bot_data.get('Product_Process') or raw_row.get('Related Material Field / Process', '')
     comp_val = bot_data.get('Component') or raw_row.get('Project/Part name', '')
     sub_val = bot_data.get('Sub_Component') or ''
     p1_full = f"Product / Process: {pp_val}\nComponent: {comp_val}\nSub-Component: {sub_val}"
     write_to_doc_section(doc, "1. Product / Process", p1_full)
 
-    # 5. 填充 2. Problem
+    # 4. 填充 2. Problem (Fundamental Problem)
     prob_val = bot_data.get('Problem') or raw_row.get('LL Brief Description', '')
     write_to_doc_section(doc, "2. Problem", prob_val)
 
-    # 6. 定向精准填充各个表格
+    # 5. 定向精准填充各个表格
     for table in doc.tables:
         t_header = "".join(cell.text for cell in table.rows[0].cells).lower()
         
         # A. 锁定 Pictures 表格
-        if "ok-part" in t_header or "not-ok-part" in t_header or len(table.columns) == 2:
+        if "ok-part" in t_header or "not-ok-part" in t_header or (len(table.columns) == 2 and len(table.rows) <= 2):
             for row in table.rows:
                 for cell in row.cells:
                     if "ok-part" in cell.text.lower() and ok_img:
@@ -426,21 +380,23 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
                     raw_row.get('Corrective Action', ''),
                     raw_row.get('Root Cause', '')
                 )]
+            # 保留表头，移除旧占位行
             while len(table.rows) > 1:
                 tr = table.rows[-1]._tr
                 table._tbl.remove(tr)
+            # 动态根据条目增行并写入 3 列
             for row_tuple in lessons_rows:
                 new_row = table.add_row()
                 for c_idx in range(min(3, len(row_tuple))):
                     set_cell_formatted_text(new_row.cells[c_idx], row_tuple[c_idx])
 
-        # C. 锁定 4. Potentially affected (2列 4行表)
+        # C. 锁定 4. Potentially affected (2列 4行表格)
         elif "what else" in t_header or "potentially" in t_header or len(table.rows) == 4:
             w_map = {
-                0: bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Similar PCB pattern plating and surface finish processes.',
+                0: bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Similar PCB pattern plating processes.',
                 1: bot_data.get('Where') or raw_row.get('Where can the problem additionally occur?') or 'Other production lines.',
-                2: bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuation or delayed equipment maintenance.',
-                3: bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant Tier-1 suppliers.'
+                2: bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuation or delayed maintenance.',
+                3: bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant suppliers.'
             }
             for r_i, row in enumerate(table.rows):
                 if len(row.cells) >= 2 and r_i in w_map:
@@ -449,7 +405,7 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
     return doc
 
 def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_Template.docx"):
-    """生成带附件的 Outlook EML 草稿"""
+    """生成带附件、默认可编辑草稿的 Outlook EML 邮件"""
     serial_no = str(row_data.get('LL Serials No', 'LL-xxxx-xx')).strip()
     failure_mode = str(row_data.get('Failure Mode', '*****')).strip()
     subject = f"M/PQR-AP LL | {serial_no} | Title {failure_mode}"
@@ -482,7 +438,7 @@ def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_T
     msg['Subject'] = Header(subject, 'utf-8')
     msg['From'] = 'Sunny.LIU3@cn.bosch.com'
     msg['To'] = to_emails
-    msg.add_header('X-Unsent', '1')
+    msg.add_header('X-Unsent', '1') # 草稿可编辑
     
     alt_part = MIMEMultipart('alternative')
     alt_part.attach(MIMEText(html_body, 'html', 'utf-8'))
@@ -509,7 +465,6 @@ if excel_file is not None and template_file is not None:
         # 过滤 LL Need or not == Y
         ll_need_col = next((c for c in df.columns if 'need or not' in str(c).lower()), 'LL Need or not')
         if ll_need_col in df.columns:
-            orig_len = len(df)
             df = df[df[ll_need_col].astype(str).str.strip().str.upper() == 'Y']
             st.success(f"🎉 成功载入 **{sheet_name}**：已过滤保留 `{ll_need_col} = 'Y'` 的 **{len(df)}** 条有效记录。")
             
@@ -532,133 +487,9 @@ if excel_file is not None and template_file is not None:
         selected_row = filtered_df.loc[selected_record_idx]
         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
         
-        # 完整嵌入 3 列表格原型的 FEBER Prompt
+        # 构建完整嵌入表格的 FEBER Prompt (1:1 还原截图结构)
         prompt_content = f"""Please create me a short and precise lessons learned report out of the attached document in American English.
 You are an honest engineer; you provide always links to the sources and name the original slide/page number.
 Please stick to the facts. In case you have additional topics, supporting or additional useful information be creative, add them and highlight them in italic.
 
-Please write the headings in bold. Use key words that are understood by others in Bosch. Describe the report "user-friendly", so others can read it easily. One page for chapter 1-4 is appropriate. Delete all hints in blue letters.
-
-If you are asked to create a lesson learned report, or to search for a lessons learned report, structure the answer as follows:
-0. Abstract - write a short summary of the report with the structure - issue; problem; learnings; tags
-
-Abstract
-Issue: {selected_row.get('LL Brief Description', '')}
-Problem: {selected_row.get('Failure Mode', '')}
-Lessons: {selected_row.get('Should or not to do', '')}
-
-Picture – Product – Defect
-General Hint:
-• Keep it short. Two pages for chapter 1-4 should be sufficient.
-• Support your content with pictures where appropriate.
-• Use key words that are understood by others in Bosch and not only in your area of expertise.
-
-1. Product / Process
-Product / Process: {selected_row.get('Related Material Field / Process', '')}
-Component: {selected_row.get('Project/Part name', '')}
-Sub-Component: 
-
-2. Problem (Fundamental Problem)
-Note:
-Briefly describe the fundamental problem. Do not use technical root causes (TRC) or managerial root causes (MRC). Use pictures or graphs to visualize the problem. Avoid abbreviations that are specific to the division or product. If abbreviations are used, they must be explained either in the text or in the appendix.
-
-{selected_row.get('LL Brief Description', '')}
-
-3. Lessons
-Document your lessons in the table.
-• Describe your actual lessons, such as "What would I suggest my colleagues do differently next time in a similar situation?"
-• Provide a brief description of the cause and effect.
-• Explain what turned out to be new or missing knowledge at that time.
-
-| Lessons | Measures & Sustainable Solutions | Root Cause |
-| :--- | :--- | :--- |
-| {selected_row.get('Should or not to do', '')} | {selected_row.get('Corrective Action', '')} | {selected_row.get('Root Cause', '')} |
-
-4. Potentially affected.
-Determine who else might find this information useful to the best of your knowledge:
-| Aspect | Description |
-| :--- | :--- |
-| What else could be additionally be affected? | {selected_row.get('What else could be additionally affected?', 'Similar PCB pattern plating and surface finish processes.')} |
-| Where can the problem additionally occur? | {selected_row.get('Where can the problem additionally occur?', 'Other production lines.')} |
-| When can the problem additionally appear? | {selected_row.get('When can the problem additionally appear?', 'During parameter fluctuation or delayed equipment maintenance.')} |
-| Who else can be affected? | {selected_row.get('Who else can be affected?', 'PUQ-PQA, PQT, and relevant Tier-1 suppliers.')} |
-
-Check if Centers of Competence (CoC) or BEO working groups should be informed: https://connect.bosch.com/communities/community/BEO
-
-5. Appendix (Optional)
-• Refer to this appendix for extra details that provide better insight on the above information, such as existing reports, presentations, or 8D documents.
-• Include reference numbers if available, like those from 8D, IQIS, or Ticket Systems."""
-
-        # 步骤 2：复制 Prompt 并发给 Teams M-PU Bot
-        st.markdown("---")
-        st.markdown("### 2️⃣ 步骤二：复制专属 Prompt 并发给 Teams M-PU ChatGPT Bot")
-        
-        c_p, c_b = st.columns([3, 1])
-        with c_p:
-            st.text_area("📋 已内嵌 3 列表格原型的完整工程 Prompt (可一键复制):", prompt_content, height=240)
-        with c_b:
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.link_button("🚀 一键直达 Teams M-PU Bot", TEAMS_BOT_URL, use_container_width=True)
-            st.caption("💡 复制左侧带有完整表格的 Prompt，在 Teams Bot 中发送获取润色结果。")
-
-        # 步骤 3：粘贴 Bot 输出并一键生成
-        st.markdown("---")
-        st.markdown("### 3️⃣ 步骤三：粘贴 M-PU Bot 输出文本并生成交付件")
-        
-        col_in, col_sup = st.columns([3, 2])
-        with col_in:
-            bot_reply = st.text_area(
-                "📥 在此粘贴 M-PU Bot 润色后的完整回复：",
-                height=220,
-                placeholder="粘贴 Bot 输出的包含 0. Abstract, 1. Product/Process, 2. Problem, 3. Lessons (包含3列表格), 4. Potentially affected 的完整文本..."
-            )
-        with col_sup:
-            selected_sups = st.multiselect("👥 选择收件供应商 (自动读取 Vendor code 邮箱):", options=list(supplier_dict.keys()))
-            to_emails_list = []
-            for s in selected_sups:
-                to_emails_list.extend(supplier_dict[s])
-            to_emails_str = "; ".join(list(set(to_emails_list)))
-            if to_emails_str:
-                st.info(f"📧 **自动收件人:**\n`{to_emails_str}`")
-
-        if st.button("🚀 立即安全生成 Word 报告与 Outlook 邮件草稿", type="primary", use_container_width=True):
-            if template_file is None:
-                st.error("❌ 未检测到 Word 模板，请在侧边栏确认路径。")
-            else:
-                with st.spinner("正在定向装配 3 列表格、清除蓝色提示词并嵌入图片..."):
-                    bot_data = parse_bot_feber_response(bot_reply) if bot_reply.strip() else {}
-                    
-                    # 定向装配 Word 模板
-                    doc = populate_docx_exact_tables(template_file, bot_data, selected_row, ok_img, ng_img)
-                    bio = io.BytesIO()
-                    doc.save(bio)
-                    doc_bytes = bio.getvalue()
-                    
-                    serial_str = str(selected_row.get(serial_no_col, 'LL-Export'))
-                    doc_filename = f"LL_Template_{serial_str}.docx"
-                    eml_bytes = generate_eml_file(selected_row, to_emails_str, doc_bytes, doc_filename)
-                    
-                    st.success("🎉 生成成功！所有蓝色提示词已彻底清洗，3. Lessons 3列表格已按结构定向重构并动态增行，图片已嵌入完毕。")
-                    
-                    c_d1, c_d2 = st.columns(2)
-                    with c_d1:
-                        st.download_button(
-                            f"📥 下载 Word 报告: {doc_filename}",
-                            doc_bytes,
-                            doc_filename,
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            use_container_width=True
-                        )
-                    with c_d2:
-                        st.download_button(
-                            f"📧 下载 Outlook 草稿 (已带Word附件): Email_Draft_{serial_str}.eml",
-                            eml_bytes,
-                            f"Email_Draft_{serial_str}.eml",
-                            mime="message/rfc822",
-                            use_container_width=True
-                        )
-
-    except Exception as e:
-        st.error(f"❌ 运行异常: {e}")
-else:
-    st.info("ℹ️ 请在侧边栏确认 Master List (Excel) 和 Word 模板的文件路径。")
+Please write the headings in bold. Use key words that a
