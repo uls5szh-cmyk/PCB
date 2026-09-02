@@ -1,19 +1,21 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Automation Studio (Professional Enterprise Edition)
-- Bosch Design System (BDS 2.0) Architecture
-- 1:1 Mirror Prompt with 3-Column Tables for Teams M-PU Bot
-- Defect Image Auto-Insertion at 'Picture – Product – Defect' & Table Cells
-- Safe DOCX Population with Zero Corruption & Stream Pointer Protection
+BOSCH | PCB Lesson Learn Quality Studio (Standard FEBER Aligned Edition)
+- Hanging Indent & Tab-Stop Aligned Abstract Section
+- Robust Problem Paragraph Injection (100% Filled)
+- Universal 'Picture – Product – Defect' NG Image Embedding
+- 3-Column Lessons Table Dynamic Row Population (Tab & Pipe Delimited)
+- 4-Row Potentially Affected Precise Population
 =============================================================================
 """
 
 import streamlit as st
 import pandas as pd
 import docx
-from docx.shared import Inches, Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.oxml import OxmlElement
 import datetime
 import io
 import os
@@ -27,117 +29,58 @@ from email import encoders
 from email.header import Header
 
 # -----------------------------------------------------------------------------
-# 1. 页面基本配置与博世高端工业视觉体系 (Bosch Corporate Identity 2.0)
+# 1. 页面基本配置与博世工业视觉体系 (Bosch Corporate Identity)
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="BOSCH | PCB Lesson Learn Studio",
+    page_title="Bosch | PCB Lesson Learn Quality Studio",
     layout="wide",
     page_icon="🔴"
 )
 
-BOSCH_ENTERPRISE_STYLE = """
+BOSCH_UI_STYLE = """
 <style>
-    /* 引入博世官方配色规范 */
     :root {
         --bosch-red: #E20015;
         --bosch-blue: #005691;
-        --bosch-cyan: #008ECF;
-        --bosch-dark: #1C2B39;
+        --bosch-light-blue: #007BC0;
+        --bosch-dark-gray: #1C2B39;
         --bosch-gray: #525F6B;
-        --bosch-light-gray: #F0F3F6;
-        --bosch-border: #DDE3EA;
-        --bosch-card-bg: #FFFFFF;
+        --bosch-bg: #F4F6F8;
     }
-    
-    .stApp {
-        background-color: var(--bosch-light-gray);
-        font-family: 'Arial', 'Segoe UI', sans-serif;
-    }
-    
-    /* 博世官方 Supergraphic 特征光谱条 */
-    .bosch-supergraphic {
+    .stApp { background-color: var(--bosch-bg); }
+    .bosch-top-bar {
         height: 6px;
-        background: linear-gradient(90deg, 
-            #E20015 0%, #E20015 20%, 
-            #005691 20%, #005691 45%, 
-            #008ECF 45%, #008ECF 70%, 
-            #78BE20 70%, #78BE20 85%, 
-            #FFCF00 85%, #FFCF00 100%);
+        background: linear-gradient(90deg, #E20015 0%, #E20015 25%, #005691 25%, #005691 65%, #007BC0 65%, #007BC0 100%);
         border-radius: 3px;
-        margin-bottom: 24px;
-    }
-    
-    /* 模块卡片 */
-    .bds-card {
-        background: var(--bosch-card-bg);
-        border: 1px solid var(--bosch-border);
-        border-radius: 8px;
-        padding: 24px;
         margin-bottom: 20px;
-        box-shadow: 0 4px 12px rgba(0, 40, 80, 0.04);
-        transition: all 0.2s ease-in-out;
     }
-    .bds-card:hover {
-        box-shadow: 0 6px 18px rgba(0, 40, 80, 0.08);
-    }
-    
-    /* 步骤胶囊标签 */
-    .bds-step-badge {
-        display: inline-block;
-        background: var(--bosch-blue);
-        color: #FFFFFF;
-        font-size: 0.8rem;
-        font-weight: 700;
-        padding: 4px 12px;
-        border-radius: 20px;
-        margin-bottom: 12px;
-        letter-spacing: 0.5px;
-    }
-    
-    /* 按钮定制 */
     .stButton>button {
-        background-color: var(--bosch-blue) !important;
-        color: #FFFFFF !important;
-        border-radius: 4px !important;
-        font-weight: 600 !important;
-        border: none !important;
-        padding: 10px 24px !important;
-        transition: all 0.2s ease !important;
+        background-color: var(--bosch-blue);
+        color: white;
+        border-radius: 4px;
+        font-weight: 600;
+        border: none;
     }
     .stButton>button:hover {
-        background-color: var(--bosch-cyan) !important;
-        box-shadow: 0 4px 12px rgba(0, 142, 207, 0.3) !important;
-        color: #FFFFFF !important;
-    }
-    
-    /* 文本输入框优化 */
-    .stTextArea textarea {
-        border-radius: 6px !important;
-        border: 1px solid var(--bosch-border) !important;
-        font-family: 'Consolas', 'Courier New', monospace !important;
-        font-size: 0.9rem !important;
-    }
-    .stTextArea textarea:focus {
-        border-color: var(--bosch-blue) !important;
-        box-shadow: 0 0 0 2px rgba(0, 86, 145, 0.2) !important;
+        background-color: var(--bosch-light-blue);
+        color: white;
     }
 </style>
-<div class="bosch-supergraphic"></div>
+<div class="bosch-top-bar"></div>
 """
-st.markdown(BOSCH_ENTERPRISE_STYLE, unsafe_allow_html=True)
+st.markdown(BOSCH_UI_STYLE, unsafe_allow_html=True)
 
-# 顶部导航 Banner
 st.markdown("""
-<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
-        <h2 style="color: #005691; margin: 0; font-size: 1.8rem; font-weight: 700;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.95rem; margin: 4px 0 0 0;">FEBER 质量报告规范 · 原始列值精准组装 ➔ M-PU Bot 润色 ➔ 模板图文注入 ➔ 邮件草稿一键闭环</p>
+        <h2 style="color: #005691; margin-bottom: 2px;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
+        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 标准深度对齐 · 3列表格逐行精准映射 · 4项评估表格精准回填 · 邮件草稿一键闭环</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. 侧边栏路径与数据源
+# 2. 侧边栏路径配置
 # -----------------------------------------------------------------------------
 DEFAULT_EXCEL_PATH = r"G:\02_7_M-PQA-RBAC1\08_PQA_AE\09_PQA2\11_PCB\04_Lessons learn\PCB Lesson Learn Master List.xlsx"
 DEFAULT_TEMPLATE_PATH = r"G:\02_7_M-PQA-RBAC1\08_PQA_AE\09_PQA2\11_PCB\04_Lessons learn\LL Template complete version.docx"
@@ -163,11 +106,11 @@ else:
     if up_template: template_file = up_template
 
 # -----------------------------------------------------------------------------
-# 3. 辅助解析函数（含安全指针重置机制）
+# 3. 辅助解析函数
 # -----------------------------------------------------------------------------
 
 def load_supplier_emails(file_source):
-    """读取 Vendor code 表中的供应商与邮箱映射"""
+    """从 Vendor code 表中读取供应商与邮箱映射"""
     try:
         if hasattr(file_source, 'seek'):
             file_source.seek(0)
@@ -201,7 +144,7 @@ def load_supplier_emails(file_source):
     return {}
 
 def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
-    """提取指定行的 OK 和 NG 图片二进制流"""
+    """从 Excel 指定行提取 OK 和 NG 图片二进制流"""
     try:
         if hasattr(file_source, 'seek'):
             file_source.seek(0)
@@ -262,7 +205,7 @@ def load_excel_robust(file_source):
     return df, target_sheet, header_idx
 
 # -----------------------------------------------------------------------------
-# 4. 高鲁棒性 Bot 输出解析器 (支持制表符 \t 与 Markdown 表格双模式)
+# 4. 深度解析 Bot 回复（支持制表符 \t 与 Markdown 表格双模式）
 # -----------------------------------------------------------------------------
 
 def parse_bot_feber_response(bot_text):
@@ -316,10 +259,10 @@ def parse_bot_feber_response(bot_text):
         raw_lines = [l.strip() for l in less_text.split('\n') if l.strip()]
         
         for line in raw_lines:
-            if "measures & sustainable solutions" in line.lower() or "---" in line or line.startswith("| :---"):
+            if "measures & sustainable solutions" in line.lower() or "---" in line or line.startswith("| :---") or line.startswith("Lessons\t"):
                 continue
             if '\t' in line:
-                parts = [p.strip() for p in line.split('\t') if p.strip()]
+                parts = [p.strip() for p in line.split('\t')]
                 if len(parts) >= 3:
                     parsed['Lessons_Rows'].append((parts[0], parts[1], parts[2]))
                 elif len(parts) == 2:
@@ -365,49 +308,71 @@ def set_cell_formatted_text(cell, text):
     run.font.size = Pt(10.5)
     run.font.bold = False
 
-def replace_field_value_in_doc(doc, field_label, new_value):
-    """精准查找类似 'Issue:' 或 'Product / Process:' 并仅替换其冒号后的值"""
+def set_aligned_field_paragraph(p, label, value, indent_inches=1.0):
+    """为 Abstract 区域设置悬挂缩进（Hanging Indent），使冒号后的文字整齐对齐"""
+    p.text = ""
+    p.paragraph_format.left_indent = Inches(indent_inches)
+    p.paragraph_format.first_line_indent = Inches(-indent_inches)
+    p.paragraph_format.tab_stops.add_tab_stop(Inches(indent_inches), WD_TAB_ALIGNMENT.LEFT)
+    
+    r_label = p.add_run(label)
+    r_label.font.name = 'Arial'
+    r_label.font.size = Pt(10.5)
+    r_label.font.bold = True
+    
+    p.add_run("\t")
+    
+    r_val = p.add_run(str(value).strip())
+    r_val.font.name = 'Arial'
+    r_val.font.size = Pt(10.5)
+    r_val.font.bold = False
+
+def replace_field_value_in_doc(doc, field_label, new_value, is_abstract=False):
+    """精准查找字段标签并更新值"""
     if not new_value:
         return
     for p in doc.paragraphs:
         if field_label.lower() in p.text.lower():
-            p.text = ""
-            r_label = p.add_run(f"{field_label} ")
-            r_label.font.name = 'Arial'
-            r_label.font.size = Pt(10.5)
-            r_label.font.bold = True
-            
-            r_val = p.add_run(str(new_value).strip())
-            r_val.font.name = 'Arial'
-            r_val.font.size = Pt(10.5)
-            r_val.font.bold = False
+            if is_abstract:
+                set_aligned_field_paragraph(p, field_label, new_value, indent_inches=0.9)
+            else:
+                p.text = ""
+                r_label = p.add_run(f"{field_label} ")
+                r_label.font.name = 'Arial'
+                r_label.font.size = Pt(10.5)
+                r_label.font.bold = True
+                
+                r_val = p.add_run(str(new_value).strip())
+                r_val.font.name = 'Arial'
+                r_val.font.size = Pt(10.5)
+                r_val.font.bold = False
             return
 
-def write_to_doc_section(doc, heading_kw, text_value):
-    """向指定章节标题下方写入多行正文内容"""
-    if not text_value: return
-    paragraphs = doc.paragraphs
-    for idx, p in enumerate(paragraphs):
-        if heading_kw.lower() in p.text.lower() and len(p.text.strip()) < 50:
-            target_idx = idx + 1
-            while target_idx < len(paragraphs) and not paragraphs[target_idx].text.strip():
-                target_idx += 1
-            if target_idx < len(paragraphs):
-                target_p = paragraphs[target_idx]
-                target_p.text = ""
-                r = target_p.add_run(str(text_value).strip())
-                r.font.name = 'Arial'
-                r.font.size = Pt(10.5)
-                r.font.bold = False
-            break
+def insert_content_under_heading(doc, heading_kw, text_value):
+    """在指定标题下方安全插入内容段落（彻底解决 2 Problem 空白问题）"""
+    if not text_value:
+        return
+    for idx, p in enumerate(doc.paragraphs):
+        p_txt = p.text.strip().lower()
+        if heading_kw.lower() in p_txt and len(p_txt) < 50:
+            # 找到标题段落，在其下方创建一个全新段落节点
+            new_p_elem = OxmlElement('w:p')
+            p._element.addnext(new_p_elem)
+            new_p = docx.text.paragraph.Paragraph(new_p_elem, doc)
+            new_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            r = new_p.add_run(str(text_value).strip())
+            r.font.name = 'Arial'
+            r.font.size = Pt(10.5)
+            r.font.bold = False
+            return
 
 def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
     """
     【表格定向精准装配引擎】
-    - 0. Abstract -> 分离回填 Issue / Problem / Lessons
+    - 0. Abstract -> 对齐分离回填 Issue / Problem / Lessons
     - Picture – Product – Defect -> 自动插入不良图片 (NG Picture)
     - 1. Product/Process -> 分离回填 Product/Process / Component / Sub-Component
-    - 2. Problem -> 段落写入
+    - 2. Problem -> 精准注入正文段落
     - Pictures -> 图片表格 (OK-Part / Not-OK-Part)
     - 3. Lessons -> 3列表格 (Lessons | Measures & Sustainable Solutions | Root Cause) 逐行动态增行
     - 4. Potentially affected -> 2列4行表格 (What else / Where / When / Who)
@@ -427,30 +392,26 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
                 p_clean = p.text.strip().rstrip("–-—: ").strip()
                 p.text = f"{p_clean} – {failure_mode_str}"
 
-    # 2. 精准独立填充 0. Abstract (逐项分离回填)
+    # 2. 精准对齐填充 0. Abstract (整齐悬挂缩进)
     abs_issue = bot_data.get('Abstract_Issue') or raw_row.get('LL Brief Description', '')
     abs_prob = bot_data.get('Abstract_Problem') or raw_row.get('Failure Mode', '')
     abs_less = bot_data.get('Abstract_Lessons') or raw_row.get('Should or not to do', '')
     
-    replace_field_value_in_doc(doc, "Issue:", abs_issue)
-    replace_field_value_in_doc(doc, "Problem:", abs_prob)
-    replace_field_value_in_doc(doc, "Lessons:", abs_less)
+    replace_field_value_in_doc(doc, "Issue:", abs_issue, is_abstract=True)
+    replace_field_value_in_doc(doc, "Problem:", abs_prob, is_abstract=True)
+    replace_field_value_in_doc(doc, "Lessons:", abs_less, is_abstract=True)
 
-    # 3. 在 'Picture – Product – Defect' 下方精准插入不良图片 (NG Picture)
+    # 3. 在 'Picture – Product – Defect' 专属位置插入不良图片 (NG Picture)
     if ng_img:
         for idx, p in enumerate(doc.paragraphs):
             p_txt_clean = p.text.lower().replace(" ", "")
             if "picture" in p_txt_clean and ("defect" in p_txt_clean or "product" in p_txt_clean) and len(p_txt_clean) < 40:
-                # 寻找下方段落插入
-                target_idx = idx + 1
-                if target_idx < len(doc.paragraphs):
-                    target_p = doc.paragraphs[target_idx]
-                    target_p.text = ""
-                    target_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    target_p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(3.0))
+                p.text = ""
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.5))
                 break
 
-    # 4. 精准独立填充 1. Product / Process (逐项分离回填)
+    # 4. 精准独立填充 1. Product / Process
     pp_val = bot_data.get('Product_Process') or raw_row.get('Related Material Field / Process', '')
     comp_val = bot_data.get('Component') or raw_row.get('Project/Part name', '')
     sub_val = bot_data.get('Sub_Component') or 'Not specified'
@@ -459,9 +420,9 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
     replace_field_value_in_doc(doc, "Component:", comp_val)
     replace_field_value_in_doc(doc, "Sub-Component:", sub_val)
 
-    # 5. 填充 2. Problem (Fundamental Problem)
+    # 5. 填充 2. Problem (Fundamental Problem) -> 采用 addnext 确保不漏填
     prob_val = bot_data.get('Problem') or raw_row.get('LL Brief Description', '')
-    write_to_doc_section(doc, "2. Problem", prob_val)
+    insert_content_under_heading(doc, "Problem (Fundamental Problem)", prob_val)
 
     # 6. 定向精准填充各个表格 (Pictures / 3. Lessons / 4. Potentially affected)
     for table in doc.tables:
@@ -565,7 +526,7 @@ def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_T
     return msg.as_bytes()
 
 # -----------------------------------------------------------------------------
-# 6. 主交互流程 (BDS 2.0 工业级卡片流)
+# 6. 主交互流程
 # -----------------------------------------------------------------------------
 
 if excel_file is not None and template_file is not None:
@@ -582,11 +543,9 @@ if excel_file is not None and template_file is not None:
         serial_no_col = next((c for c in df.columns if 'serial' in str(c).lower()), 'LL Serials No')
         supplier_scope_col = next((c for c in df.columns if 'scope' in str(c).lower() or 'task' in str(c).lower()), 'LL Supplier Scope')
         
-        # ==================== STEP 1 ====================
-        st.markdown('<div class="bds-card">', unsafe_allow_html=True)
-        st.markdown('<span class="bds-step-badge">STEP 1</span> <h4 style="display:inline; margin-left:8px; color:#005691;">选择台账记录并提取事实</h4>', unsafe_allow_html=True)
-        
-        search_kw = st.text_input("🔍 搜索记录 (序列号/供应商/失效模式):", placeholder="输入关键字实时过滤...")
+        # 步骤 1：选择记录
+        st.markdown("### 1️⃣ 步骤一：选择需要处理的台账记录")
+        search_kw = st.text_input("🔍 搜索记录 (序列号/供应商/失效模式):")
         filtered_df = df.copy()
         if search_kw:
             filtered_df = df[df.astype(str).apply(lambda r: r.str.contains(search_kw, case=False).any(), axis=1)]
@@ -596,7 +555,6 @@ if excel_file is not None and template_file is not None:
             options=filtered_df.index,
             format_func=lambda x: f"[{filtered_df.loc[x, serial_no_col]}] {filtered_df.loc[x, 'Failure Mode']} - {filtered_df.loc[x, 'Project/Part name']}"
         )
-        st.markdown('</div>', unsafe_allow_html=True)
         
         selected_row = filtered_df.loc[selected_record_idx]
         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
@@ -662,22 +620,21 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
 ==================== [Raw Master List Facts] ====================
 {raw_facts_block}"""
 
-        # ==================== STEP 2 ====================
-        st.markdown('<div class="bds-card">', unsafe_allow_html=True)
-        st.markdown('<span class="bds-step-badge">STEP 2</span> <h4 style="display:inline; margin-left:8px; color:#005691;">一键复制 Prompt 并在 Teams M-PU Bot 润色</h4>', unsafe_allow_html=True)
+        # 步骤 2：复制 Prompt 并发给 Teams M-PU Bot
+        st.markdown("---")
+        st.markdown("### 2️⃣ 步骤二：复制专属 Prompt 并发给 Teams M-PU ChatGPT Bot")
         
         c_p, c_b = st.columns([3, 1])
         with c_p:
-            st.text_area("📋 已内嵌 3 列表格原型的完整工程 Prompt (点击右上角图标复制):", prompt_content, height=220)
+            st.text_area("📋 已完整内嵌 3 列表格原型的工程 Prompt (可一键复制):", prompt_content, height=240)
         with c_b:
             st.markdown("<br>", unsafe_allow_html=True)
             st.link_button("🚀 一键直达 Teams M-PU Bot", TEAMS_BOT_URL, use_container_width=True)
-            st.caption("💡 操作提示：复制左侧带有 3 列表格的完整 Prompt，在 Teams 窗口中发送给 Bot。")
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.caption("💡 复制左侧带有完整表格的 Prompt，在 Teams Bot 中发送获取润色结果。")
 
-        # ==================== STEP 3 ====================
-        st.markdown('<div class="bds-card">', unsafe_allow_html=True)
-        st.markdown('<span class="bds-step-badge">STEP 3</span> <h4 style="display:inline; margin-left:8px; color:#005691;">粘贴 Bot 回复并一键生成最终交付包</h4>', unsafe_allow_html=True)
+        # 步骤 3：粘贴 Bot 输出并一键生成
+        st.markdown("---")
+        st.markdown("### 3️⃣ 步骤三：粘贴 M-PU Bot 输出文本并生成交付件")
         
         col_in, col_sup = st.columns([3, 2])
         with col_in:
@@ -695,11 +652,11 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
             if to_emails_str:
                 st.info(f"📧 **自动收件人:**\n`{to_emails_str}`")
 
-        if st.button("🚀 立即生成标准化 Word 报告与 Outlook 邮件草稿", type="primary", use_container_width=True):
+        if st.button("🚀 立即安全生成 Word 报告与 Outlook 邮件草稿", type="primary", use_container_width=True):
             if template_file is None:
                 st.error("❌ 未检测到 Word 模板，请在侧边栏确认路径。")
             else:
-                with st.spinner("正在定向装配表格、插入不良图片并生成邮件附件..."):
+                with st.spinner("正在定向装配 3 列表格、清除占位词并嵌入图片..."):
                     bot_data = parse_bot_feber_response(bot_reply) if bot_reply.strip() else {}
                     
                     # 定向装配 Word 模板
@@ -712,7 +669,7 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
                     doc_filename = f"LL_Template_{serial_str}.docx"
                     eml_bytes = generate_eml_file(selected_row, to_emails_str, doc_bytes, doc_filename)
                     
-                    st.success("🎉 生成成功！3. Lessons 3列表格与 4 项评估表格已精准回填，图片已自动嵌入完毕。")
+                    st.success("🎉 生成成功！0. Abstract 已整齐对齐，2. Problem 与不良图片已正常写入，3. Lessons 3列表格与 4 项评估已精准回填。")
                     
                     c_d1, c_d2 = st.columns(2)
                     with c_d1:
@@ -731,7 +688,6 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
                             mime="message/rfc822",
                             use_container_width=True
                         )
-        st.markdown('</div>', unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"❌ 运行异常: {e}")
