@@ -1,18 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (1:1 Exact FEBER Table Edition)
-- 1:1 Mirror Prompt with Full Markdown Tables for Teams M-PU Bot
-- Non-Destructive Deep Table-Cell Population (100% Openable DOCX)
-- Double-Pass Blue Hints & Parenthesized Guidelines Auto-Wiper
-- Dynamic 3-Column Lessons Table & Auto-Fit Image Embedding
+BOSCH | PCB Lesson Learn Quality Studio (Standard FEBER Table-Matched Edition)
 =============================================================================
 """
 
 import streamlit as st
 import pandas as pd
 import docx
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import datetime
 import io
@@ -72,7 +68,7 @@ st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
         <h2 style="color: #005691; margin-bottom: 2px;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 表格 1:1 精准对齐 · 提示词全域深度清洗 · 3列表格动态增行 · 邮件一键分发</p>
+        <p style="color: #525F6B; font-size: 0.9rem; margin: 0;">FEBER 表格 1:1 精准对齐 · 蓝色提示词全域深度清洗 · 3列表格动态增行 · 邮件一键分发</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -209,7 +205,9 @@ def load_excel_robust(file_source):
 def parse_bot_feber_response(bot_text):
     """解析 Bot 输出的 Markdown 3列表格与各章节内容"""
     parsed = {
-        'Abstract': '',
+        'Abstract_Issue': '',
+        'Abstract_Problem': '',
+        'Abstract_Lessons': '',
         'Product_Process': '',
         'Component': '',
         'Sub_Component': '',
@@ -223,7 +221,14 @@ def parse_bot_feber_response(bot_text):
     
     # 0. Abstract
     m_abs = re.search(r'(?:0\.\s*Abstract|Abstract)\s*([\s\S]*?)(?=1\.\s*Product|$)', bot_text, re.I)
-    if m_abs: parsed['Abstract'] = m_abs.group(1).strip()
+    if m_abs:
+        t = m_abs.group(1)
+        i_m = re.search(r'Issue:\s*([^\n]+)', t, re.I)
+        p_m = re.search(r'Problem:\s*([^\n]+)', t, re.I)
+        l_m = re.search(r'Lessons:\s*([^\n]+)', t, re.I)
+        if i_m: parsed['Abstract_Issue'] = i_m.group(1).strip()
+        if p_m: parsed['Abstract_Problem'] = p_m.group(1).strip()
+        if l_m: parsed['Abstract_Lessons'] = l_m.group(1).strip()
     
     # 1. Product / Process
     m_p = re.search(r'1\.\s*Product\s*/\s*Process\s*([\s\S]*?)(?=2\.\s*Problem|$)', bot_text, re.I)
@@ -253,7 +258,6 @@ def parse_bot_feber_response(bot_text):
                 elif len(cells) == 2:
                     parsed['Lessons_Rows'].append((cells[0], cells[1], ""))
         if not parsed['Lessons_Rows']:
-            # 如果不是 Markdown 表格，作为纯文本兜底
             parsed['Lessons_Rows'].append((less_text, "", ""))
             
     # 4. Potentially affected
@@ -285,18 +289,18 @@ def set_cell_formatted_text(cell, text):
     run.font.size = Pt(10.5)
     run.font.bold = False
 
-def wipe_blue_hints_from_doc(doc):
-    """全文档彻底清除蓝色提示词（扫描所有 Runs 与固有提示词特征）"""
+def wipe_all_hints(doc):
+    """全域彻底清除蓝色提示词（扫描所有段落与表格）"""
     HINT_REGEX = [
-        r"^note:", r"^general hint:", r"^describe briefly", r"^briefly describe",
+        r"^please note:", r"^comment:", r"^general hint:", r"^describe briefly", r"^briefly describe",
         r"^provide detailed", r"^concentrate on", r"^keep it short", r"^support your content",
         r"^use key words", r"^document your lessons", r"^what would i suggest",
         r"^what measures did we", r"^sustainable solution", r"^do not repeat the 8d",
         r"^describe the main root", r"\(similar applications", r"\(other production lines",
         r"\(new applications", r"\(other customers", r"delete all hints in blue letters",
-        r"^beware: this document", r"^\.\.\.$", r"^…$"
+        r"^beware: this document", r"check if centers of competence", r"^\.\.\.$", r"^…$"
     ]
-    # 清理段落
+    # 清理正文段落
     for p in doc.paragraphs:
         p_txt = p.text.strip().lower()
         if any(re.search(pat, p_txt) for pat in HINT_REGEX):
@@ -352,10 +356,7 @@ def write_to_doc_section(doc, heading_kw, text_value):
             break
 
 def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
-    """
-    【表格定向精准装配引擎】
-    直接对准模板里的各个表格与章节进行写入，彻底杜绝段落与表格错位！
-    """
+    """【表格定向精准装配引擎】"""
     doc = docx.Document(template_source)
     current_date_str = datetime.date.today().strftime('%b %d %Y')
     failure_mode_str = str(raw_row.get('Failure Mode', '')).strip()
@@ -370,13 +371,14 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
                 p.text = f"{p_clean} – {failure_mode_str}"
 
     # 2. 全局清除所有蓝色提示词
-    wipe_blue_hints_from_doc(doc)
+    wipe_all_hints(doc)
 
     # 3. 填充 0. Abstract
-    abs_text = bot_data.get('Abstract')
-    if not abs_text:
-        abs_text = f"Issue: {raw_row.get('LL Brief Description', '')}\nProblem: {raw_row.get('Failure Mode', '')}\nLessons: {raw_row.get('Should or not to do', '')}"
-    write_to_doc_section(doc, "Abstract", abs_text)
+    abs_issue = bot_data.get('Abstract_Issue') or raw_row.get('LL Brief Description', '')
+    abs_prob = bot_data.get('Abstract_Problem') or raw_row.get('Failure Mode', '')
+    abs_less = bot_data.get('Abstract_Lessons') or raw_row.get('Should or not to do', '')
+    abs_full = f"Issue: {abs_issue}\nProblem: {abs_prob}\nLessons: {abs_less}"
+    write_to_doc_section(doc, "Abstract", abs_full)
 
     # 4. 填充 1. Product / Process
     pp_val = bot_data.get('Product_Process') or raw_row.get('Related Material Field / Process', '')
@@ -389,7 +391,7 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
     prob_val = bot_data.get('Problem') or raw_row.get('LL Brief Description', '')
     write_to_doc_section(doc, "2. Problem", prob_val)
 
-    # 6. 定向精准填充表格：Pictures、3. Lessons
+    # 6. 定向精准填充各个表格
     for table in doc.tables:
         t_header = "".join(cell.text for cell in table.rows[0].cells).lower()
         
@@ -417,34 +419,25 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
                     raw_row.get('Corrective Action', ''),
                     raw_row.get('Root Cause', '')
                 )]
-            # 清除原模板所有旧占位行（只保留第0行表头）
             while len(table.rows) > 1:
                 tr = table.rows[-1]._tr
                 table._tbl.remove(tr)
-            # 动态增行写入
             for row_tuple in lessons_rows:
                 new_row = table.add_row()
                 for c_idx in range(min(3, len(row_tuple))):
                     set_cell_formatted_text(new_row.cells[c_idx], row_tuple[c_idx])
 
-    # 7. 填充 4. Potentially affected
-    w1 = bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Similar PCB pattern plating and surface finish processes.'
-    w2 = bot_data.get('Where') or raw_row.get('Where can the problem additionally occur?') or 'Other production lines with comparable tooling.'
-    w3 = bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuation or delayed maintenance cycles.'
-    w4 = bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant Tier-1 PCB suppliers.'
-    
-    pot_full = f"""What else could be additionally affected?
-{w1}
-
-Where can the problem additionally occur?
-{w2}
-
-When can the problem additionally appear?
-{w3}
-
-Who else can be affected?
-{w4}"""
-    write_to_doc_section(doc, "4. Potentially affected", pot_full)
+        # C. 锁定 4. Potentially affected (2列 4行表)
+        elif "what else" in t_header or "potentially" in t_header or len(table.rows) == 4:
+            w_map = {
+                0: bot_data.get('What_Else') or raw_row.get('What else could be additionally affected?') or 'Similar PCB pattern plating processes.',
+                1: bot_data.get('Where') or raw_row.get('Where can the problem additionally occur?') or 'Other production lines.',
+                2: bot_data.get('When') or raw_row.get('When can the problem additionally appear?') or 'During parameter fluctuations.',
+                3: bot_data.get('Who') or raw_row.get('Who else can be affected?') or 'PUQ-PQA, PQT, and relevant suppliers.'
+            }
+            for r_i, row in enumerate(table.rows):
+                if len(row.cells) >= 2 and r_i in w_map:
+                    set_cell_formatted_text(row.cells[1], w_map[r_i])
 
     return doc
 
@@ -532,16 +525,26 @@ if excel_file is not None and template_file is not None:
         selected_row = filtered_df.loc[selected_record_idx]
         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_record_idx)
         
-        # 完美对齐 Word 模板表格原型的 FEBER Prompt
-        prompt_content = f"""Please create me a short and precise lessons learned report out of below facts in American English.
+        # 构建完整嵌入表格的 FEBER Prompt (1:1 还原截图规范)
+        prompt_content = f"""Please create me a short and precise lessons learned report out of the attached document in American English.
 You are an honest engineer; you provide always links to the sources and name the original slide/page number.
-Please stick to the facts. Write the headings in bold. One page for chapter 1-4 is appropriate. Delete all hints in blue letters.
+Please stick to the facts. In case you have additional topics, supporting or additional useful information be creative, add them and highlight them in italic.
 
-Structure the answer strictly as follows:
-0. Abstract
+Please write the headings in bold. Use key words that are understood by others in Bosch. Describe the report "user-friendly", so others can read it easily. One page for chapter 1-4 is appropriate. Delete all hints in blue letters.
+
+If you are asked to create a lesson learned report, or to search for a lessons learned report, structure the answer as follows:
+0. Abstract - write a short summary of the report with the structure - issue; problem; learnings; tags
+
+Abstract
 Issue: {selected_row.get('LL Brief Description', '')}
 Problem: {selected_row.get('Failure Mode', '')}
 Lessons: {selected_row.get('Should or not to do', '')}
+
+Picture – Product – Defect
+General Hint:
+• Keep it short. Two pages for chapter 1-4 should be sufficient.
+• Support your content with pictures where appropriate.
+• Use key words that are understood by others in Bosch and not only in your area of expertise.
 
 1. Product / Process
 Product / Process: {selected_row.get('Related Material Field / Process', '')}
@@ -549,27 +552,35 @@ Component: {selected_row.get('Project/Part name', '')}
 Sub-Component: 
 
 2. Problem (Fundamental Problem)
+Note:
+Briefly describe the fundamental problem. Do not use technical root causes (TRC) or managerial root causes (MRC). Use pictures or graphs to visualize the problem. Avoid abbreviations that are specific to the division or product. If abbreviations are used, they must be explained either in the text or in the appendix.
+
 {selected_row.get('LL Brief Description', '')}
 
 3. Lessons
+Document your lessons in the table.
+• Describe your actual lessons, such as "What would I suggest my colleagues do differently next time in a similar situation?"
+• Provide a brief description of the cause and effect.
+• Explain what turned out to be new or missing knowledge at that time.
+
 | Lessons | Measures & Sustainable Solutions | Root Cause |
 | :--- | :--- | :--- |
 | {selected_row.get('Should or not to do', '')} | {selected_row.get('Corrective Action', '')} | {selected_row.get('Root Cause', '')} |
 
-4. Potentially affected
-What else could be additionally affected?
-{selected_row.get('What else could be additionally affected?', 'Similar PCB pattern plating and surface finish processes.')}
+4. Potentially affected.
+Determine who else might find this information useful to the best of your knowledge:
+| Aspect | Description |
+| :--- | :--- |
+| What else could be additionally be affected? | {selected_row.get('What else could be additionally affected?', 'Similar PCB pattern plating and surface finish processes.')} |
+| Where can the problem additionally occur? | {selected_row.get('Where can the problem additionally occur?', 'Other production lines.')} |
+| When can the problem additionally appear? | {selected_row.get('When can the problem additionally appear?', 'During parameter fluctuation or delayed equipment maintenance.')} |
+| Who else can be affected? | {selected_row.get('Who else can be affected?', 'PUQ-PQA, PQT, and relevant Tier-1 suppliers.')} |
 
-Where can the problem additionally occur?
-{selected_row.get('Where can the problem additionally occur?', 'Other production lines.')}
+Check if Centers of Competence (CoC) or BEO working groups should be informed: https://connect.bosch.com/communities/community/BEO
 
-When can the problem additionally appear?
-{selected_row.get('When can the problem additionally appear?', 'During parameter fluctuation or delayed equipment maintenance.')}
-
-Who else can be affected?
-{selected_row.get('Who else can be affected?', 'PUQ-PQA, PQT, and relevant Tier-1 suppliers.')}
-
-5. Appendix (Optional)"""
+5. Appendix (Optional)
+• Refer to this appendix for extra details that provide better insight on the above information, such as existing reports, presentations, or 8D documents.
+• Include reference numbers if available, like those from 8D, IQIS, or Ticket Systems."""
 
         # 步骤 2：复制 Prompt 并在 Teams M-PU Bot 中润色
         st.markdown("---")
