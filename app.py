@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-BOSCH | PCB Lesson Learn Quality Studio (Standard FEBER Edition)
-- Original High-Precision Excel Image Extractor (Row.name Indexing)
-- 1:1 Mirror Prompt with Full 3-Column Tables for Teams M-PU Bot
-- Multi-Row Dynamic Lessons Table & 4-Row Potentially Affected Population
-- Auto Picture Insertion in Picture/Defect Cells & Recipient-Ready EML Draft
+BOSCH | PCB Lesson Learn Quality Studio (Streamlined & Compact Image Edition)
+- 100% Background Silent Excel Image Extractor (No Cluttered UI Previews)
+- Compact Tight-Fitting Picture Embedding (Zero Blank Space / Margin Zeroing)
+- 1:1 Mirror Prompt with 3-Column Tables & Dynamic Table Population
+- Recipient-Ready Outlook EML Draft Generation with Word Attachment
 =============================================================================
 """
 
@@ -92,7 +92,7 @@ st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
     <div>
         <h2 style="color: #005691; margin: 0; font-weight: 700;">🔴 BOSCH | PCB Lesson Learn 协同工作台</h2>
-        <p style="color: #525F6B; font-size: 0.95rem; margin: 4px 0 0 0;">FEBER 质量报告规范 · 原始数据无损提取 ➔ M-PU Bot 润色 ➔ 模板图文精准注入 ➔ 邮件一键闭环</p>
+        <p style="color: #525F6B; font-size: 0.95rem; margin: 4px 0 0 0;">FEBER 质量报告规范 · 原始数据无损提取 ➔ M-PU Bot 润色 ➔ 模板图文紧凑注入 ➔ 邮件草稿一键闭环</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -124,7 +124,7 @@ else:
     if up_template: template_file = up_template
 
 # -----------------------------------------------------------------------------
-# 3. 辅助解析函数（采用原版精准提取逻辑）
+# 3. 辅助解析函数（高可靠性后台静默提取图片）
 # -----------------------------------------------------------------------------
 
 def load_supplier_emails(file_source):
@@ -160,7 +160,7 @@ def load_supplier_emails(file_source):
     return {}
 
 def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
-    """【原版稳定逻辑】从 Excel 指定行提取 NG 和 OK 图片二进制流"""
+    """从 Excel 指定行提取 NG 和 OK 图片二进制流"""
     import openpyxl
     try:
         if hasattr(file_source, 'seek'): file_source.seek(0)
@@ -172,9 +172,9 @@ def get_images_for_row(file_source, sheet_name, header_idx, target_row_idx):
         for col_idx in range(1, ws.max_column + 1):
             val = ws.cell(row=header_idx + 1, column=col_idx).value
             if val:
-                val_str = str(val).strip()
-                if 'NG Picture' in val_str or 'Picture' in val_str: col_ng = col_idx - 1
-                if 'OK Picture' in val_str: col_ok = col_idx - 1
+                val_str = str(val).strip().lower()
+                if 'ng picture' in val_str or 'picture' in val_str: col_ng = col_idx - 1
+                if 'ok picture' in val_str: col_ok = col_idx - 1
                 
         excel_target_row = header_idx + 1 + target_row_idx
         ok_img = None
@@ -305,7 +305,7 @@ def parse_bot_feber_response(bot_text):
     return parsed
 
 # -----------------------------------------------------------------------------
-# 5. 精准装配 Word 模板核心函数 (100% 对应单元格与段落)
+# 5. 精准装配 Word 模板核心函数 (紧凑无缝图片置入)
 # -----------------------------------------------------------------------------
 
 def set_cell_formatted_text(cell, text):
@@ -376,8 +376,8 @@ def insert_content_under_heading(doc, heading_kw, text_value):
 def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, ng_img=None):
     """
     【表格定向精准装配引擎】
+    - 紧凑置入图片，边距归零，消除大片空白
     - 0. Abstract -> 对齐分离回填 Issue / Problem / Lessons
-    - Picture 单元格 -> 识别包含 'picture' / 'defect' / 'not-ok-part' 的单元格并居中置入不良图片
     - 1. Product/Process -> 分离回填 Product/Process / Component / Sub-Component
     - 2. Problem -> 精准注入正文段落
     - 3. Lessons -> 3列表格 (Lessons | Measures & Sustainable Solutions | Root Cause) 逐行动态增行
@@ -420,28 +420,33 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
     prob_val = bot_data.get('Problem') or raw_row.get('LL Brief Description', '')
     insert_content_under_heading(doc, "Problem (Fundamental Problem)", prob_val)
 
-    # 5. 定向精准填充各个表格 (Picture 单元格 / 3. Lessons / 4. Potentially affected)
-    picture_inserted = False
+    # 5. 定向精准填充各个表格 (Picture 紧凑置入 / 3. Lessons / 4. Potentially affected)
     for table in doc.tables:
         t_header = "".join(cell.text for cell in table.rows[0].cells).lower()
         
-        # A. 扫描任意表格中带有 'picture' / 'defect' / 'not-ok' 的单元格并置入不良图片
+        # A. 扫描所有表格中包含 'picture' / 'defect' / 'not-ok' 的单元格（紧凑嵌入，边距归零）
         for row in table.rows:
             for cell in row.cells:
                 c_txt = cell.text.lower().replace(" ", "")
-                if "picture" in c_txt or "defect" in c_txt or "not-ok" in c_txt:
+                if ("picture" in c_txt or "defect" in c_txt or "not-ok" in c_txt) and "ok-part" not in c_txt:
                     if ng_img:
                         cell.text = ""
                         p = cell.paragraphs[0]
                         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.8))
-                        picture_inserted = True
+                        p.paragraph_format.space_before = Pt(0)
+                        p.paragraph_format.space_after = Pt(0)
+                        p.paragraph_format.line_spacing = 1.0
+                        # 调整为紧凑黄金宽度 1.85 英寸，彻底消除大片空白
+                        p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(1.85))
                 elif "ok-part" in c_txt:
                     if ok_img:
                         cell.text = ""
                         p = cell.paragraphs[0]
                         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        p.add_run().add_picture(io.BytesIO(ok_img), width=Inches(2.8))
+                        p.paragraph_format.space_before = Pt(0)
+                        p.paragraph_format.space_after = Pt(0)
+                        p.paragraph_format.line_spacing = 1.0
+                        p.add_run().add_picture(io.BytesIO(ok_img), width=Inches(1.85))
 
         # B. 锁定 3. Lessons (3列对策表：Lessons | Measures & Sustainable Solutions | Root Cause)
         if "lessons" in t_header and ("measures" in t_header or "root cause" in t_header):
@@ -473,16 +478,6 @@ def populate_docx_exact_tables(template_source, bot_data, raw_row, ok_img=None, 
             for r_i, row in enumerate(table.rows):
                 if len(row.cells) >= 2 and r_i in w_map:
                     set_cell_formatted_text(row.cells[1], w_map[r_i])
-
-    # 兜底：如果表格里没找到，检查正文段落
-    if not picture_inserted and ng_img:
-        for p in doc.paragraphs:
-            p_txt_clean = p.text.lower().replace(" ", "")
-            if "picture" in p_txt_clean and len(p_txt_clean) < 40:
-                p.text = ""
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p.add_run().add_picture(io.BytesIO(ng_img), width=Inches(2.8))
-                break
 
     return doc
 
@@ -520,7 +515,7 @@ def generate_eml_file(row_data, to_emails="", doc_bytes=None, doc_filename="LL_T
     msg['Subject'] = Header(subject, 'utf-8')
     msg['From'] = 'Sunny.LIU3@cn.bosch.com'
     msg['To'] = to_emails
-    msg.add_header('X-Unsent', '1')
+    msg.add_header('X-Unsent', '1') # 草稿可编辑模式
     
     alt_part = MIMEMultipart('alternative')
     alt_part.attach(MIMEText(html_body, 'html', 'utf-8'))
@@ -555,7 +550,7 @@ if excel_file is not None and template_file is not None:
         
         # ==================== STEP 1 ====================
         st.markdown('<div class="bds-card">', unsafe_allow_html=True)
-        st.markdown('<span class="bds-step-badge">STEP 1</span> <h4 style="display:inline; margin-left:8px; color:#005691;">选择台账记录并检查图片</h4>', unsafe_allow_html=True)
+        st.markdown('<span class="bds-step-badge">STEP 1</span> <h4 style="display:inline; margin-left:8px; color:#005691;">选择台账记录并提取事实</h4>', unsafe_allow_html=True)
         
         search_kw = st.text_input("🔍 搜索记录 (序列号/供应商/失效模式):", placeholder="输入关键字实时过滤...")
         filtered_df = df.copy()
@@ -567,19 +562,10 @@ if excel_file is not None and template_file is not None:
             options=filtered_df.index,
             format_func=lambda x: f"[{filtered_df.loc[x, serial_no_col]}] {filtered_df.loc[x, 'Failure Mode']} - {filtered_df.loc[x, 'Project/Part name']}"
         )
+        st.markdown('</div>', unsafe_allow_html=True)
         
         selected_row = filtered_df.loc[selected_record_idx]
-        
-        # 【关键修复】：直接使用该行在原始表格中的相对位置或索引提取图片
         ok_img, ng_img = get_images_for_row(excel_file, sheet_name, header_idx, selected_row.name)
-        
-        if ng_img:
-            st.info("✅ 已成功从 Excel 提取到不良图片！")
-            st.image(ng_img, caption="提取到的 Picture 预览", width=220)
-        else:
-            st.warning("⚠️ 未在当前行的 Picture 列中检测到图片，生成时图片位置将保持空白。")
-            
-        st.markdown('</div>', unsafe_allow_html=True)
         
         # 动态生成纯净的事实清单
         raw_facts_list = []
@@ -679,7 +665,7 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
             if template_file is None:
                 st.error("❌ 未检测到 Word 模板，请在侧边栏确认路径。")
             else:
-                with st.spinner("正在定向装配表格、插入 Picture 图片并生成邮件附件..."):
+                with st.spinner("正在定向装配表格、紧凑插入不良图片并生成邮件附件..."):
                     bot_data = parse_bot_feber_response(bot_reply) if bot_reply.strip() else {}
                     
                     # 定向装配 Word 模板 (自动置入当前选中的 ng_img 和 ok_img)
@@ -692,7 +678,7 @@ Check if Centers of Competence (CoC) or BEO working groups should be informed: h
                     doc_filename = f"LL_Template_{serial_str}.docx"
                     eml_bytes = generate_eml_file(selected_row, to_emails_str, doc_bytes, doc_filename)
                     
-                    st.success("🎉 生成成功！Abstract 已严格对齐，2. Problem 与 Picture 图片已正常写入，3. Lessons 3列表格已按行回填。")
+                    st.success("🎉 生成成功！图片已紧凑居中嵌入，排版整洁紧凑，无多余大片空白。")
                     
                     c_d1, c_d2 = st.columns(2)
                     with c_d1:
